@@ -7,8 +7,10 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 import json
 
-# 1. 权限初始化
-# 从 Secrets 中安全读取 JSON 密钥
+# --- 1. 初始化：权限与模型 ---
+st.set_page_config(page_title="A股智投私域终端", layout="wide", initial_sidebar_state="collapsed")
+
+# 安全加载 Secrets
 gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
 credentials = service_account.Credentials.from_service_account_info(gcp_info)
 drive_service = build('drive', 'v3', credentials=credentials)
@@ -16,8 +18,8 @@ drive_service = build('drive', 'v3', credentials=credentials)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-3-flash')
 
-# 2. 从 Google Drive 动态获取文件函数
-def get_excel_from_drive(file_id):
+# --- 2. 核心：云端数据抓取函数 ---
+def load_data_from_drive(file_id):
     request = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
@@ -27,26 +29,66 @@ def get_excel_from_drive(file_id):
     fh.seek(0)
     return pd.ExcelFile(fh)
 
-# --- 界面展示 ---
-st.title("🚀 A股资金流向云端看板")
+# --- 3. 配置你的“封装数据” ID ---
+# 请在 Google Drive 网页版打开文件，URL 中 /d/ 后面那一串就是 ID
+# 你可以设置两个固定 ID，一个总榜，一个细分
+SECTOR_FILE_ID = "这里填入你的『行业板块』文件ID"
+DETAIL_FILE_ID = "这里填入你的『细分板块（如半导体）』文件ID"
 
-# 这里填入你 Google Drive 文件夹中对应文件的 ID
-# (在网页版 Drive 打开文件，URL 后面那一串长字符串就是 ID)
-FILE_ID = "你的文件ID" 
+# --- 4. 主界面布局 ---
+st.title("🛡️ A股智投私域看板 (Gemini 3 Flash)")
 
-if st.button("🔄 刷新云端数据并生成分析报告"):
-    with st.spinner("正在直接连接 Google Drive..."):
-        # 获取最新的 Excel
-        excel_data = get_excel_from_drive(FILE_ID)
-        # 默认取最后一个 Sheet (最新的日期)
-        latest_date = excel_data.sheet_names[-1]
-        df = pd.read_excel(excel_data, sheet_name=latest_date)
-        
-        st.subheader(f"📅 最新数据日期：{latest_date}")
-        st.dataframe(df)
-        
-        # 喂给 Gemini 进行分析
-        prompt = f"你是资深策略师，请分析以下数据并给出结论：{df.to_string()}"
-        response = model.generate_content(prompt)
-        st.markdown("### 🤖 智能诊断报告")
-        st.write(response.text)
+tab1, tab2 = st.tabs(["📊 自动复盘报告", "💬 专家决策咨询"])
+
+with tab1:
+    col_a, col_b = st.columns([1, 1])
+    
+    # 自动加载逻辑
+    try:
+        with st.spinner("正在同步云端封装数据..."):
+            # 默认加载细分板块数据作为演示
+            excel_obj = load_data_from_drive(DETAIL_FILE_ID)
+            latest_sheet = excel_obj.sheet_names[-1] # 自动取最新日期
+            df = pd.read_excel(excel_obj, sheet_name=latest_sheet)
+            
+            # 应用封装逻辑：成交额前 20
+            df_filtered = df.sort_values(by='成交额', ascending=False).head(20)
+            
+        with col_a:
+            st.subheader(f"📅 数据快照：{latest_sheet}")
+            st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+            
+        with col_b:
+            st.subheader("🤖 Gemini 3 Flash 自动诊断")
+            # 自动触发分析（无需点击）
+            if "daily_report" not in st.session_state:
+                prompt = f"分析以下成交额前20的股票数据，总结今日资金流向特征：{df_filtered.to_string()}"
+                response = model.generate_content(prompt)
+                st.session_state.daily_report = response.text
+            
+            st.markdown(st.session_state.daily_report)
+
+    except Exception as e:
+        st.error(f"云端数据连接失败，请检查 FILE_ID 是否正确。错误信息: {e}")
+
+with tab2:
+    st.subheader("💬 实时决策支持")
+    # 聊天记录存储
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if chat_input := st.chat_input("输入你的问题（如：根据今日数据，半导体板块的抱团程度如何？）"):
+        st.session_state.messages.append({"role": "user", "content": chat_input})
+        with st.chat_message("user"):
+            st.markdown(chat_input)
+            
+        with st.chat_message("assistant"):
+            # 聊天时也会自动带入当日数据上下文
+            context_prompt = f"基于今日数据：{df_filtered.to_string()}。请回答用户问题：{chat_input}"
+            response = model.generate_content(context_prompt)
+            st.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
