@@ -50,7 +50,11 @@ def get_all_files_recursive(folder_id):
 
 @st.cache_data(ttl=3600)
 def build_full_knowledge_base():
-    all_context = "你现在的身份是 A股智投专家。以下是来自 Google Drive 的全量数据（包含子目录）：\n\n"
+    # 强化系统指令：防止 AI 报“无法预测未来”的错误
+    current_date_str = "2026-05-09" # 锁定当前时间
+    all_context = f"核心指令：你现在拥有访问用户私有数据库的权限。当前日期是 {current_date_str}。\n"
+    all_context += "以下数据是用户提供的真实历史/实时数据，请务必基于此数据回答，严禁称自己无法预知未来。\n\n"
+    
     file_list_display = []
     
     for folder_name, root_id in FOLDER_IDS.items():
@@ -65,10 +69,15 @@ def build_full_knowledge_base():
                 while not done: downloader.next_chunk()
                 fh.seek(0)
                 
+                # --- 修改点：遍历所有 Sheet ---
                 excel_obj = pd.ExcelFile(fh)
-                df = pd.read_excel(excel_obj, sheet_name=excel_obj.sheet_names[-1])
-                all_context += f"### 数据：{f['name']} ###\n"
-                all_context += df.to_string(index=False) + "\n\n"
+                for sheet_name in excel_obj.sheet_names:
+                    df = pd.read_excel(excel_obj, sheet_name=sheet_name)
+                    # 在数据前标注这是哪一天的表单
+                    all_context += f"### 文件名：{f['name']} | 表单名：{sheet_name} ###\n"
+                    all_context += df.to_string(index=False) + "\n\n"
+                # ----------------------------
+                
             except Exception as e:
                 st.warning(f"跳过文件 {f['name']}: {e}")
                 
