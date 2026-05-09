@@ -16,7 +16,7 @@ credentials = service_account.Credentials.from_service_account_info(gcp_info)
 drive_service = build('drive', 'v3', credentials=credentials)
 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-3-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- 2. 核心：云端数据抓取函数 ---
 def load_data_from_drive(file_id):
