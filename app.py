@@ -8,7 +8,7 @@ import io
 import json
 
 # --- 1. 基础配置与 CSS 注入 ---
-st.set_page_config(page_title="智投知识库终端", layout="wide")
+#st.set_page_config(page_title="智投知识库终端", layout="wide")
 
 # 强制允许内容滚动的 CSS
 st.markdown("""
