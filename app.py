@@ -32,8 +32,12 @@ def load_data_from_drive(file_id):
 # --- 3. 配置你的“封装数据” ID ---
 # 请在 Google Drive 网页版打开文件，URL 中 /d/ 后面那一串就是 ID
 # 你可以设置两个固定 ID，一个总榜，一个细分
-SECTOR_FILE_ID = "这里填入你的『行业板块』文件ID"
-DETAIL_FILE_ID = "这里填入你的『细分板块（如半导体）』文件ID"
+# --- 封装数据 ID 配置 ---
+# 总榜：用于分析全市场大势，筛选 500 亿成交额以上的板块
+SECTOR_FILE_ID = "1AeX5t-DngAZaVPpIJogEpU0M9-Q_bNj0"
+
+# 分板：用于深挖特定行业（如半导体、电力）中前 20 名的核心个股
+DETAIL_FILE_ID = "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"
 
 # --- 4. 主界面布局 ---
 st.title("🛡️ A股智投私域看板 (Gemini 3 Flash)")
