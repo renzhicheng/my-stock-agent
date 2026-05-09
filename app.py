@@ -7,6 +7,24 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 import json
 
+# --- 强制开启滚动条的 CSS 注入 ---
+st.markdown("""
+    <style>
+    /* 强制主容器允许垂直滚动 */
+    .stMain {
+        overflow-y: auto !important;
+    }
+    /* 针对聊天消息容器的优化 */
+    .stChatMessageContainer {
+        overflow-y: auto !important;
+    }
+    /* 隐藏一些不必要的页边距，让滚动更顺滑 */
+    .block-container {
+        padding-bottom: 5rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 1. 基础配置 ---
 st.set_page_config(page_title="智投对话终端", layout="wide")
 
