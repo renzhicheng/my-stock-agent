@@ -7,100 +7,94 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 import json
 
-# --- 强制开启滚动条的 CSS 注入 ---
-st.markdown("""
-    <style>
-    /* 强制主容器允许垂直滚动 */
-    .stMain {
-        overflow-y: auto !important;
-    }
-    /* 针对聊天消息容器的优化 */
-    .stChatMessageContainer {
-        overflow-y: auto !important;
-    }
-    /* 隐藏一些不必要的页边距，让滚动更顺滑 */
-    .block-container {
-        padding-bottom: 5rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# --- 1. 初始化 ---
+st.set_page_config(page_title="智投知识库终端", layout="wide")
 
-# --- 1. 基础配置 ---
-st.set_page_config(page_title="智投对话终端", layout="wide")
-
-# 初始化 GCP 与 Gemini 权限
+# 加载 GCP 与 Gemini (Paid Tier 自动识别模型)
 gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
 credentials = service_account.Credentials.from_service_account_info(gcp_info)
 drive_service = build('drive', 'v3', credentials=credentials)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 2. 动态获取模型 (解决 404 关键) ---
-@st.cache_resource
-def get_best_model():
-    # 自动获取当前 API 支持的所有模型
-    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # 优先匹配 Gemini 3 系列
-    for m in models:
-        if 'gemini-3-flash' in m: return m
-    return models[0] # 保底方案
+# 自动获取当前可用的 Gemini 3 Flash 模型
+models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+target_model = next((m for m in models if 'gemini-3-flash' in m), models[0])
+model = genai.GenerativeModel(target_model)
 
-target_model_name = get_best_model()
-model = genai.GenerativeModel(target_model_name)
+# --- 2. 工程核心：多文件夹扫描逻辑 ---
+# 这里填入你两个文件夹的 ID
+FOLDER_IDS = {
+    "总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t",
+    "分板文件夹": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"
+}
 
-# --- 3. 数据加载函数 ---
-def load_data(file_id):
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-    fh.seek(0)
-    excel_obj = pd.ExcelFile(fh)
-    # 自动取最新的 Sheet 数据
-    return pd.read_excel(excel_obj, sheet_name=excel_obj.sheet_names[-1])
+@st.cache_data(ttl=3600) # 缓存 1 小时，避免频繁请求 API
+def build_full_knowledge_base():
+    all_context = "你现在的身份是 A股智投专家。以下是来自 Google Drive 知识库的所有实时数据：\n\n"
+    file_list_display = []
+    
+    for folder_name, f_id in FOLDER_IDS.items():
+        # 扫描文件夹内的所有 Excel 文件
+        query = f"'{f_id}' in parents and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
+        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+        files = results.get('files', [])
+        
+        for f in files:
+            file_list_display.append(f"{folder_name} -> {f['name']}")
+            # 读取文件内容
+            request = drive_service.files().get_media(fileId=f['id'])
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+            fh.seek(0)
+            
+            # 读取 Excel (自动取最新 Sheet)
+            excel_obj = pd.ExcelFile(fh)
+            df = pd.read_excel(excel_obj, sheet_name=excel_obj.sheet_names[-1])
+            
+            # 转换为文本加入大背景
+            all_context += f"### 数据来源：{folder_name} - {f['name']} ###\n"
+            all_context += df.to_string(index=False) + "\n\n"
+            
+    return all_context, file_list_display
 
-# --- 4. 界面布局 ---
-st.title("💬 智投数据专家对话")
-st.caption(f"当前运行模型: {target_model_name} | 模式: Paid Tier")
+# --- 3. 界面显示 ---
+st.title("🏛️ A股私域知识库对话 (Gemini 3 Flash)")
 
-# 填入你之前的分板 ID
-DETAIL_FILE_ID = "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"
+with st.status("正在扫描并同步云端知识库...", expanded=True) as status:
+    knowledge_base, files_found = build_full_knowledge_base()
+    st.write(f"✅ 已成功挂载 {len(files_found)} 个板块文件。")
+    status.update(label="知识库同步完成！", state="complete", expanded=False)
 
-# 加载数据并预览
-try:
-    df = load_data(DETAIL_FILE_ID)
-    with st.expander("🔍 查看今日封装数据预览", expanded=False):
-        st.dataframe(df.head(10), use_container_width=True)
-except Exception as e:
-    st.error(f"数据加载失败: {e}")
-    df = pd.DataFrame() # 兜底防止后续报错
+# 在侧边栏显示当前加载的“知识清单”
+with st.sidebar:
+    st.header("📂 当前挂载知识点")
+    for f in files_found:
+        st.write(f"📄 {f}")
 
-# --- 5. 核心对话区 ---
+# --- 4. 聊天区 ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 显示历史消息
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 输入框
-if prompt := st.chat_input("基于今日数据，你想了解什么？"):
-    # 记录并显示用户消息
+if prompt := st.chat_input("基于全量知识库，请问你想分析什么？"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 助手回复
     with st.chat_message("assistant"):
-        # 将数据作为背景上下文喂给 AI
-        data_context = f"以下是今日成交额前20的标的数据：\n{df.to_string(index=False)}\n\n"
-        full_prompt = f"{data_context}请回答用户问题：{prompt}"
+        # 极其关键：将整个知识库塞进上下文
+        full_prompt = f"{knowledge_base}\n\n根据以上所有板块的数据，请回答：{prompt}"
         
         try:
+            # Gemini 3 Flash 的百万 Token 窗口足够支撑这种“全量喂养”
             response = model.generate_content(full_prompt)
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
-            st.error(f"对话生成失败: {e}")
+            st.error(f"分析失败: {e}")
