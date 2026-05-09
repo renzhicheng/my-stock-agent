@@ -29,37 +29,81 @@ FOLDER_IDS = {
 }
 
 @st.cache_data(ttl=3600) # 缓存 1 小时，避免频繁请求 API
+# --- 1. 递归扫描函数：支持文件夹嵌套 ---
+def get_all_files_recursive(folder_id):
+    all_excel_files = []
+    
+    # 首先：查找该目录下所有的 Excel 文件
+    file_query = f"'{folder_id}' in parents and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
+    file_results = drive_service.files().list(q=file_query, fields="files(id, name)").execute()
+    all_excel_files.extend(file_results.get('files', []))
+    
+    # 其次：查找该目录下所有的子文件夹
+    folder_query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+    folder_results = drive_service.files().list(q=folder_query, fields="files(id, name)").execute()
+    sub_folders = folder_results.get('files', [])
+    
+    # 递归：进入每一个子文件夹重复上述动作
+    for sub in sub_folders:
+        all_excel_files.extend(get_all_files_recursive(sub['id']))
+        
+    return all_excel_files
+
+@st.cache_data(ttl=3600)
 def build_full_knowledge_base():
-    all_context = "你现在的身份是 A股智投专家。以下是来自 Google Drive 知识库的所有实时数据：\n\n"
+    all_context = "你现在的身份是 A股智投专家。以下是来自 Google Drive 知识库（含多层子目录）的所有实时数据：\n\n"
     file_list_display = []
     
-    for folder_name, f_id in FOLDER_IDS.items():
-        # 扫描文件夹内的所有 Excel 文件
-        query = f"'{f_id}' in parents and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
-        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-        files = results.get('files', [])
+    for folder_name, root_id in FOLDER_IDS.items():
+        # 执行“深度穿透”扫描
+        files = get_all_files_recursive(root_id)
         
         for f in files:
             file_list_display.append(f"{folder_name} -> {f['name']}")
-            # 读取文件内容
-            request = drive_service.files().get_media(fileId=f['id'])
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-            fh.seek(0)
             
-            # 读取 Excel (自动取最新 Sheet)
-            excel_obj = pd.ExcelFile(fh)
-            df = pd.read_excel(excel_obj, sheet_name=excel_obj.sheet_names[-1])
-            
-            # 转换为文本加入大背景
-            all_context += f"### 数据来源：{folder_name} - {f['name']} ###\n"
-            all_context += df.to_string(index=False) + "\n\n"
-            
+            # 读取文件内容 (复用你之前的读取逻辑)
+            try:
+                request = drive_service.files().get_media(fileId=f['id'])
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                
+                excel_obj = pd.ExcelFile(fh)
+                df = pd.read_excel(excel_obj, sheet_name=excel_obj.sheet_names[-1])
+                
+                all_context += f"### 数据来源：{f['name']} ###\n"
+                all_context += df.to_string(index=False) + "\n\n"
+            except Exception as e:
+                st.warning(f"无法读取文件 {f['name']}: {e}")
+                
     return all_context, file_list_display
 
+# --- 2. 界面显示与滚动条优化 ---
+st.markdown("""
+    <style>
+    .stMain { overflow-y: auto !important; }
+    .stChatMessageContainer { overflow-y: auto !important; }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🏛️ A股全维知识库 (Gemini 3 Flash)")
+
+# 自动扫描并展示知识清单
+with st.status("正在执行深度穿透扫描 (递归检索子目录)...", expanded=True) as status:
+    knowledge_base, files_found = build_full_knowledge_base()
+    st.write(f"✅ 已成功挂载 {len(files_found)} 个板块文件（含子文件夹内容）。")
+    status.update(label="全量知识库加载完毕！", state="complete", expanded=False)
+
+# 侧边栏展示找到的所有文件（你可以看看有没有漏掉的）
+with st.sidebar:
+    st.header("📂 自动扫描清单")
+    for f in files_found:
+        st.write(f"📄 {f}")
+
+# ... (后续对话逻辑不变) ...
 # --- 3. 界面显示 ---
 st.title("🏛️ A股私域知识库对话 (Gemini 3 Flash)")
 
