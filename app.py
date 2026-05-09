@@ -1,57 +1,52 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
+import json
 
-# --- 页面设置 ---
-st.set_page_config(page_title="A股智投看板", layout="wide")
+# 1. 权限初始化
+# 从 Secrets 中安全读取 JSON 密钥
+gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+credentials = service_account.Credentials.from_service_account_info(gcp_info)
+drive_service = build('drive', 'v3', credentials=credentials)
 
-# --- 初始化 Gemini (使用你已有的 API Key) ---
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-pro')
+model = genai.GenerativeModel('gemini-3-flash')
 
-# --- 侧边栏：文件上传与处理 ---
-with st.sidebar:
-    st.header("📤 数据同步中心")
-    uploaded_file = st.file_uploader("上传原始 Excel", type=["xlsx"])
-    
-    if uploaded_file:
-        # 这里可以嵌入你之前的 Colab 过滤逻辑
-        st.success("数据已接收，正在执行自动化过滤并同步至 Google Drive...")
+# 2. 从 Google Drive 动态获取文件函数
+def get_excel_from_drive(file_id):
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    return pd.ExcelFile(fh)
 
-# --- 主界面布局 ---
-tab1, tab2 = st.tabs(["📊 今日深度报告", "💬 智能助手对话"])
+# --- 界面展示 ---
+st.title("🚀 A股资金流向云端看板")
 
-with tab1:
-    if uploaded_file:
-        st.subheader("🤖 Gemini 自动分析报告")
-        # 模拟自动触发报告逻辑
-        if st.button("更新今日分析"):
-            with st.spinner("正在扫描云盘数据..."):
-                # 这里放入你固定的专业 Prompt
-                response = model.generate_content("请基于今日成交额数据，生成一份技术性分析报告。")
-                st.markdown(response.text)
-    else:
-        st.info("请先上传数据以生成报告")
+# 这里填入你 Google Drive 文件夹中对应文件的 ID
+# (在网页版 Drive 打开文件，URL 后面那一串长字符串就是 ID)
+FILE_ID = "你的文件ID" 
 
-with tab2:
-    st.subheader("💬 数据自由问答")
-    # 初始化聊天历史
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # 显示聊天历史
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # 聊天输入
-    if prompt := st.chat_input("问问关于板块资金流向的问题..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            # 这里 Gemini 会结合你的数据进行回答
-            response = model.generate_content(prompt)
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+if st.button("🔄 刷新云端数据并生成分析报告"):
+    with st.spinner("正在直接连接 Google Drive..."):
+        # 获取最新的 Excel
+        excel_data = get_excel_from_drive(FILE_ID)
+        # 默认取最后一个 Sheet (最新的日期)
+        latest_date = excel_data.sheet_names[-1]
+        df = pd.read_excel(excel_data, sheet_name=latest_date)
+        
+        st.subheader(f"📅 最新数据日期：{latest_date}")
+        st.dataframe(df)
+        
+        # 喂给 Gemini 进行分析
+        prompt = f"你是资深策略师，请分析以下数据并给出结论：{df.to_string()}"
+        response = model.generate_content(prompt)
+        st.markdown("### 🤖 智能诊断报告")
+        st.write(response.text)
