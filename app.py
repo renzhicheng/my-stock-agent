@@ -5,7 +5,6 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 
@@ -28,20 +27,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 权限初始化 (增加错误捕获) ---
+# --- 2. 权限初始化 ---
 try:
-    if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets:
-        st.error("❌ 缺少 GCP_SERVICE_ACCOUNT_JSON 密钥")
     gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
     credentials = service_account.Credentials.from_service_account_info(gcp_info)
     drive_service = build('drive', 'v3', credentials=credentials)
-    
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     deepseek_client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 except Exception as e:
-    st.error(f"⚠️ 密钥解析或 API 初始化失败: {e}")
+    st.error(f"❌ 司礼监初始化异常：{e}")
 
-# --- 3. 核心功能函数 ---
+# --- 3. 核心工具函数 ---
 def get_all_csv_recursive(folder_id):
     all_files = []
     query = f"'{folder_id}' in parents and (name contains '.csv' or mimeType = 'text/csv')"
@@ -57,44 +53,25 @@ def get_all_csv_recursive(folder_id):
 
 @st.cache_data(ttl=600)
 def fetch_imperial_data():
-    kb_list = []
-    fl = []
+    kb, fl = "", []
+    # 🚨 已应用万岁爷最新的 ID 🚨
     ids = {
-        "总榜": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", 
-        "分板": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"
+        "总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", 
+        "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"
     }
-    
-    all_tasks = []
     for f_type, f_id in ids.items():
         files = get_all_csv_recursive(f_id)
         for f in files:
-            all_tasks.append((f, f_type))
-
-    def download_one_file(task):
-        f, f_type = task
-        try:
-            request = drive_service.files().get_media(fileId=f['id'])
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done: _, done = downloader.next_chunk()
-            fh.seek(0)
-            df = pd.read_csv(fh, encoding='utf-8-sig')
-            # 放弃 markdown 模式，直接用 to_string 确保不依赖外部库
-            content = f"【文件：{f['name']}】\n{df.to_string(index=False)}\n"
-            return content, f"{f_type} -> {f['name']}"
-        except Exception as e:
-            return None, str(e)
-
-    # 降低线程数至 5，确保稳定性
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(download_one_file, all_tasks))
-
-    for content, name in results:
-        if content:
-            kb_list.append(content)
-            fl.append(name)
-    return "".join(kb_list), fl
+            fl.append(f"{f_type} -> {f['name']}")
+            try:
+                request = drive_service.files().get_media(fileId=f['id'])
+                fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done: _, done = downloader.next_chunk()
+                fh.seek(0); df = pd.read_csv(fh, encoding='utf-8-sig')
+                kb += f"\n【文件：{f['name']}】\n{df.to_string(index=False)}\n"
+            except: continue
+    return kb, fl
 
 @st.cache_resource
 def get_best_model():
@@ -104,47 +81,76 @@ def get_best_model():
         return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
     except: return 'models/gemini-1.5-flash'
 
+# --- 4. 历史记录初始化 ---
+# 关键：创建一个 history 列表，用来存储每一次互动的“全家桶”
 if "decree_history" not in st.session_state:
     st.session_state.decree_history = []
 
-# --- 4. 界面展示 ---
+# --- 5. 界面逻辑 ---
 st.title("🏮 赛博大明·智投决策中心")
 
 with st.sidebar:
     st.header("⚙️ 档案库")
-    if st.button("🔄 同步并清空记录"):
+    if st.button("🔄 同步并清空记录", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.session_state.decree_history = []
         st.rerun()
     st.divider()
     knowledge, files = fetch_imperial_data()
-    if files:
-        st.success(f"已录入 {len(files)} 份奏章")
-        for f in files: st.caption(f"📄 {f}")
-    else:
-        st.warning("查无奏章，请核对 ID 权限")
+    st.success(f"已录入 {len(files)} 份奏章")
+    for f in files: st.caption(f"📄 {f}")
 
-# --- 5. 圣旨发布区 ---
-user_input = st.chat_input("朕有旨意...")
+# --- 6. 圣旨发布区 ---
+st.subheader("📝 宣旨与批复")
+user_input = st.chat_input("朕有旨意（例如：复盘今日成交额前十，对比昨日异动）...")
 
 if user_input:
-    with st.status("重臣正在议事...") as status:
+    # 这一步会触发 AI 计算，并将结果打包存入历史
+    with st.status("重臣正在接旨商议中...") as status:
         try:
+            # 1. 内阁首辅 (Gemini) 响应
+            st.write("内阁正在拟票...")
             m_name = get_best_model()
             m = genai.GenerativeModel(m_name)
-            cab_res = m.generate_content(f"专业复盘研报。旨意：{user_input}\n数据：\n{knowledge}").text
+            cab_p = f"你是一位顶级金融策略分析师。万岁爷旨意：{user_input}\n数据：\n{knowledge}\n请给出宏观与板块分析，严禁文言文。"
+            cab_res = m.generate_content(cab_p).text
             
+            # 2. 锦衣卫 (DeepSeek) 审计
+            st.write("锦衣卫正在审计...")
+            j_p = f"你是一位量化资金面分析师。参考内阁意见：{cab_res}\n旨意：{user_input}\n数据：\n{knowledge}\n请指出内阁遗漏的资金博弈细节，犀利指出风险。"
             j_res = deepseek_client.chat.completions.create(
-                model="deepseek-chat", # 暂时回退到稳健的 chat 代号
-                messages=[{"role": "user", "content": f"量化分析。参考内阁：{cab_res}\n数据：\n{knowledge}"}]
+                model="deepseek-v4-pro", # 或 deepseek-chat
+                messages=[{"role": "user", "content": j_p}]
             ).choices[0].message.content
             
+            # 3. 将这一组对话存入历史记录
             st.session_state.decree_history.append({
-                "decree": user_input, "cabinet": cab_res, "jinyiwei": j_res
+                "decree": user_input,
+                "cabinet": cab_res,
+                "jinyiwei": j_res
             })
             status.update(label="✅ 朝议完毕", state="complete")
         except Exception as e:
-            st.error(
+            st.error(f"传旨异常: {e}")
+
+# --- 7. 渲染全量历史记录 ---
+# 像“帖子列表”一样，从旧到新展示所有互动
+for idx, entry in enumerate(st.session_state.decree_history):
+    # 展示圣旨
+    st.markdown(f"<div class='decree-box'>第 {idx+1} 议 · 奉天承运：{entry['decree']}</div>", unsafe_allow_html=True)
+    
+    # 展示内阁回复
+    st.markdown("<span class='header-text'>📜 内阁首辅 (Gemini) 复盘意见</span>", unsafe_allow_html=True)
+    st.markdown(f"<div class='report-card cabinet-border'>{entry['cabinet']}</div>", unsafe_allow_html=True)
+    
+    # 展示锦衣卫回复
+    st.markdown("<span class='header-text'>🦅 锦衣卫 (DeepSeek) 资金刺探</span>", unsafe_allow_html=True)
+    st.markdown(f"<div class='report-card jinyiwei-border'>{entry['jinyiwei']}</div>", unsafe_allow_html=True)
+    
+    st.divider()
+
+if not st.session_state.decree_history:
+    st.info("💡 请在下方输入框中发布首道圣旨，开启今日廷议。")
 
 if not st.session_state.decree_history:
     st.info("💡 请在下方输入框中发布圣旨。")
