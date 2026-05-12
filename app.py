@@ -2,7 +2,7 @@ import streamlit as st
 import logic
 from prompts import ROLE_CHAIN
 
-st.set_page_config(page_title="赛博大明·智投决策", layout="centered")
+st.set_page_config(page_title="赛博大明王朝", layout="centered")
 
 st.markdown("""
     <style>
@@ -57,7 +57,7 @@ for turn in st.session_state.chat_history:
 # ==========================================
 # 4. 底部输入框监听
 # ==========================================
-chat_input = st.chat_input("输入新的旨意 (如：明天半导体能接吗？)...")
+chat_input = st.chat_input("输入新的旨意 (如：明天XX个股能接吗？)...")
 
 if chat_input:
     st.session_state.current_scenario = "chat"  # 标记为日常追问模式
@@ -124,7 +124,7 @@ elif len(st.session_state.chat_history) == 0:
     
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        if st.button("🌅 升座上朝 (生成今日简报)", use_container_width=True, type="primary"):
+        if st.button("🌅 上朝 (生成今日简报)", use_container_width=True, type="primary"):
             st.session_state.current_scenario = "init"  # 标记为上朝全景模式
             st.session_state.current_decree = "开始分析当日的行情局势"
             st.session_state.execute_flag = True
