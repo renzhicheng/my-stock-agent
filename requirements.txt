@@ -4,3 +4,4 @@ google-generativeai
 openai
 google-api-python-client
 google-auth
+tabulate
