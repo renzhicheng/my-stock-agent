@@ -88,13 +88,24 @@ with st.sidebar:
 if st.button("🏮 开启双臣对话", use_container_width=True):
     tab1, tab2 = st.tabs(["📜 内阁 (Gemini)", "🦅 锦衣卫 (DeepSeek)"])
     
+    # --- 修改 Tab 1 (Gemini) 里的调用部分 ---
     with tab1:
         st.subheader("内阁首辅意见 (全量深度复盘)")
         with st.spinner("首辅拟票中..."):
-            m = genai.GenerativeModel('gemini-1.5-pro')
-            prompt = f"你现在的身份是大明内阁首辅。当前日期是 2026年5月12日。请基于以下全量 A股数据进行复盘，指出核心行业逻辑：\n{knowledge}"
-            response = m.generate_content(prompt)
-            st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
+            try:
+                # 尝试使用 2026 年最稳健的模型名称
+                # 如果报错，请尝试更换为 'models/gemini-1.5-pro' 或 'models/gemini-1.5-flash'
+                model_name = 'gemini-1.5-pro' 
+                
+                m = genai.GenerativeModel(model_name)
+                prompt_text = f"你现在的身份是大明内阁首辅。请基于以下数据复盘：\n{knowledge}"
+                
+                response = m.generate_content(prompt_text)
+                st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"⚠️ 内阁（Gemini）回应失败。错误类型：{type(e).__name__}")
+                st.info("💡 建议：请检查 Secrets 中的 GEMINI_API_KEY 是否正确，或尝试将代码中的模型名改为 'gemini-1.5-flash'")
 
     with tab2:
         st.subheader("锦衣卫密折 (资金流向刺探)")
