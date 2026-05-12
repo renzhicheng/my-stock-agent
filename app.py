@@ -106,17 +106,35 @@ if st.button("🏮 宣：文武百官上朝议事", use_container_width=True):
     tab1, tab2 = st.tabs(["📜 内阁 (Gemini 3 Flash)", "🦅 锦衣卫 (DeepSeek)"])
     
     with tab1:
-        st.subheader("内阁首辅意见 (全量深度分析)")
-        with st.spinner("首辅拟票中..."):
-            try:
-                # 核心修正：锁定 2026 年最新官方名称
-                m = genai.GenerativeModel('models/gemini-3-flash')
-                prompt = f"你现在的身份是大明内阁首辅。请基于以下全量奏章数据进行复盘：\n{knowledge}"
-                response = m.generate_content(prompt)
-                st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
-                st.caption("✨ 此回复由内阁首辅 Gemini 3 Flash 呈递")
-            except Exception as e:
-                st.error(f"内阁传旨受阻：{e}")
+    st.subheader("内阁首辅意见 (动态选才版)")
+    with st.spinner("首辅拟票中..."):
+        try:
+            # --- 动态寻才逻辑：不再猜名字，直接现场点名 ---
+            available_models = [
+                m.name for m in genai.list_models() 
+                if 'generateContent' in m.supported_generation_methods
+                and 'flash' in m.name.lower()  # 只要是 Flash 家族的
+            ]
+            
+            if not available_models:
+                # 兜底：如果列表落空，尝试最经典的稳定版官衔
+                target_model = 'models/gemini-1.5-flash'
+            else:
+                # 排序取最新：比如列表中有 1.5, 2.0, 3.0，取最新那个
+                target_model = sorted(available_models, reverse=True)[0]
+            
+            # --- 正式传旨 ---
+            m = genai.GenerativeModel(target_model)
+            prompt_text = f"你现在的身份是大明内阁首辅。请基于以下全量奏章数据，给出复盘意见：\n{knowledge}"
+            
+            response = m.generate_content(prompt_text)
+            
+            st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
+            st.caption(f"✨ 内阁首辅已到任。当前使用的御赐官衔为：`{target_model}`")
+            
+        except Exception as e:
+            st.error(f"❌ 内阁传旨再次受阻。臣有罪，错误详情：{e}")
+            st.info("💡 建议：请确保 Google AI Studio 的 API Key 已正确配置在 Streamlit Secrets 中。")
 
     with tab2:
         st.subheader("锦衣卫密折 (资金动态刺探)")
