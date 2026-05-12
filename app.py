@@ -3,7 +3,7 @@ import logic
 from prompts import ROLE_CHAIN
 
 # --- 1. 样式与初始化 (DeepSeek 极简风) ---
-st.set_page_config(page_title="赛博大明·智投决策", layout="centered")
+st.set_page_config(page_title="赛博大明投策王朝", layout="centered")
 
 st.markdown("""
     <style>
@@ -135,7 +135,7 @@ elif st.session_state.current_decree and st.session_state.current_responses:
 
 # --- 4. 初始空白页（新增主视觉引导按钮） ---
 else:
-    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>大明智投引擎已就绪</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>各位大臣已就绪</h2>", unsafe_allow_html=True)
     
     st.markdown("<div class='center-button-wrapper'></div>", unsafe_allow_html=True)
     
