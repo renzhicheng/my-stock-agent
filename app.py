@@ -22,16 +22,20 @@ st.markdown("""
         background-color: #fffde7; padding: 15px; border-radius: 10px; 
         border: 2px dashed #d4af37; margin-bottom: 20px; color: #5d4037; font-weight: bold;
     }
-    .header-text { font-size: 1.2rem; font-weight: bold; margin-bottom: 8px; display: block; }
+    .header-text { font-size: 1.2rem; font-weight: bold; margin-bottom: 12px; display: block; }
+    .history-divider { border-top: 2px solid #e0e0e0; margin: 40px 0; }
     </style>
 """, unsafe_allow_html=True)
+
+# --- 新增：初始化会话状态 (Session State) ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # --- 2. 权限初始化 ---
 try:
     gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
     credentials = service_account.Credentials.from_service_account_info(gcp_info)
     drive_service = build('drive', 'v3', credentials=credentials)
-    # 初始化 DeepSeek 客户端
     deepseek_client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 except Exception as e:
     st.error(f"❌ 司礼监初始化异常：{e}")
@@ -71,11 +75,9 @@ def fetch_imperial_data():
             except: continue
     return kb, fl
 
-# 新增：统一的 DeepSeek 调用包装函数
 def ask_deepseek(system_prompt, user_content, model="deepseek-chat", temp=0.3):
-    """封装多角色调用的核心函数，通过 system_prompt 区分扮演角色"""
     response = deepseek_client.chat.completions.create(
-        model=model, # 如果你使用的是特殊的代理渠道模型名，可以改回 "deepseek-v4-pro"
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
@@ -85,7 +87,6 @@ def ask_deepseek(system_prompt, user_content, model="deepseek-chat", temp=0.3):
     return response.choices[0].message.content
 
 # --- 4. 界面逻辑 ---
-
 st.title("🏮 赛博大明·智投决策中心")
 
 with st.sidebar:
@@ -93,62 +94,79 @@ with st.sidebar:
     if st.button("🔄 同步最新奏章", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+    if st.button("🧹 清理朝堂记录", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
     st.divider()
     knowledge, files = fetch_imperial_data()
     st.success(f"已录入 {len(files)} 份数据")
     for f in files: st.caption(f"📄 {f}")
 
-# --- 5. 圣旨输入区 ---
-st.subheader("📝 宣旨与批复")
+# --- 5. 宣旨与历史记录展示区 ---
+st.subheader("📝 朝堂议政记录")
+
+# 步骤 A：渲染过往的所有历史记录
+for i, turn in enumerate(st.session_state.chat_history):
+    st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{turn['decree']}</div>", unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([1, 1]) # 让历史记录可以并排或上下显示，这里保持上下结构以保证阅读体验
+    st.markdown(f"""
+        <div class='report-card cabinet-border'>
+            <span class='header-text'>📜 第一议：内阁首辅 (宏观复盘)</span>
+            {turn['cabinet']}
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+        <div class='report-card jinyiwei-border'>
+            <span class='header-text'>🦅 第二议：锦衣卫 (资金刺探与审计)</span>
+            {turn['jinyiwei']}
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='history-divider'></div>", unsafe_allow_html=True)
+
+# 步骤 B：处理新的旨意输入
 user_decree = st.chat_input("朕有旨意（例如：复盘今日成交额前十、分析半导体异动等）...")
 
 if user_decree:
-    # 记录在 Session State 中以便展示
+    # 立即在界面最下方渲染当前最新的问题
     st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{user_decree}</div>", unsafe_allow_html=True)
     
-    # --- 第一步：内阁接旨 (DeepSeek 扮演首辅) ---
-    cabinet_container = st.container()
-    with cabinet_container:
-        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (宏观复盘)</span>", unsafe_allow_html=True)
+    cabinet_output = ""
+    jinyiwei_output = ""
+
+    # --- 第一步：内阁接旨 ---
+    with st.container():
         with st.spinner("首辅正在针对旨意拟票..."):
             try:
                 cabinet_sys = "你是一位顶级的金融【宏观策略分析师】，现在正在扮演明朝内阁首辅处理政务。"
-                cabinet_prompt = f"""
-                【万岁爷的旨意】：{user_decree}
-                【原始奏章数据】：{knowledge}
-                
-                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑、大盘宏观趋势。
-                要求：严禁使用文言文，保持现代金融专业口吻，以宏观大局观为主。
-                """
+                cabinet_prompt = f"【万岁爷的旨意】：{user_decree}\n【原始奏章数据】：{knowledge}\n请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑、大盘宏观趋势。要求：严禁使用文言文，保持现代金融专业口吻，以宏观大局观为主。"
                 cabinet_output = ask_deepseek(system_prompt=cabinet_sys, user_content=cabinet_prompt)
-                st.markdown(f"<div class='report-card cabinet-border'>{cabinet_output}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='report-card cabinet-border'><span class='header-text'>📜 第一议：内阁首辅 (宏观复盘)</span>{cabinet_output}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"内阁传旨受阻：{e}")
                 cabinet_output = "内阁未能给出有效研判。"
 
-    # --- 第二步：锦衣卫领命 (DeepSeek 扮演都指挥使) ---
-    jinyiwei_container = st.container()
-    with jinyiwei_container:
-        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (资金刺探与审计)</span>", unsafe_allow_html=True)
+    # --- 第二步：锦衣卫领命 ---
+    with st.container():
         with st.spinner("都指挥使正在根据内阁结论进行复核与资金刺探..."):
             try:
                 jinyiwei_sys = "你是一位顶级的金融【量化资金面分析师】，现在扮演明朝锦衣卫指挥使，负责暗查资金异动并审计内阁的言论。"
-                jinyiwei_prompt = f"""
-                【万岁爷的旨意】：{user_decree}
-                【内阁首辅的初步分析】：{cabinet_output}
-                【原始奏章数据】：{knowledge}
-                
-                指令：
-                1. 针对万岁爷的旨意，通过数据刺探主力资金轨迹、异动标的（个股层面）。
-                2. 审计内阁首辅的宏观结论。如果他遗漏了资金面的博弈细节，或者判断有误，请毫不留情地直接指出并更正。
-                要求：风格专业、冷静、犀利。严禁使用文言文。
-                """
-                # 这里可以适当调低 temperature 让锦衣卫更注重数字逻辑
+                jinyiwei_prompt = f"【万岁爷的旨意】：{user_decree}\n【内阁首辅的初步分析】：{cabinet_output}\n【原始奏章数据】：{knowledge}\n指令：\n1. 针对万岁爷的旨意，通过数据刺探主力资金轨迹、异动标的。\n2. 审计内阁首辅的宏观结论，指出遗漏或更正错误。\n要求：风格专业、冷静、犀利。严禁使用文言文。"
                 jinyiwei_output = ask_deepseek(system_prompt=jinyiwei_sys, user_content=jinyiwei_prompt, temp=0.2)
-                st.markdown(f"<div class='report-card jinyiwei-border'>{jinyiwei_output}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='report-card jinyiwei-border'><span class='header-text'>🦅 第二议：锦衣卫 (资金刺探与审计)</span>{jinyiwei_output}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"锦衣卫探报受阻：{e}")
-else:
-    st.info("💡 请在下方输入框中下达旨意，开启今日廷议。")
+                jinyiwei_output = "锦衣卫未能给出有效探报。"
 
-st.divider()
+    # --- 步骤 C：将本次完整的对话存入历史记录 ---
+    st.session_state.chat_history.append({
+        "decree": user_decree,
+        "cabinet": cabinet_output,
+        "jinyiwei": jinyiwei_output
+    })
+    
+    st.markdown("<div class='history-divider'></div>", unsafe_allow_html=True)
+elif len(st.session_state.chat_history) == 0:
+    st.info("💡 请在下方输入框中下达旨意，开启今日廷议。")
