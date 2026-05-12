@@ -1,4 +1,3 @@
-# logic.py
 import streamlit as st
 import pandas as pd
 from openai import OpenAI
@@ -8,7 +7,6 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 import json
 
-# --- 权限初始化 ---
 @st.cache_resource
 def init_services():
     try:
@@ -20,20 +18,28 @@ def init_services():
         st.error(f"❌ 司礼监初始化异常：{e}")
         st.stop()
 
-# --- 核心工具函数 ---
 def get_csv_files(drive_service, folder_id):
-    q = f"'{folder_id}' in parents and (mimeType = 'text/csv' or mimeType = 'application/vnd.google-apps.folder')"
+    # 严格限定只查找 csv 文件或文件夹
+    q = f"'{folder_id}' in parents and (mimeType = 'text/csv' or mimeType = 'application/vnd.google-apps.folder' or name contains '.csv')"
     res = drive_service.files().list(q=q, fields="files(id, name, mimeType)").execute().get('files', [])
-    files = [f for f in res if f['mimeType'] == 'text/csv']
-    folders = [f for f in res if f['mimeType'] != 'text/csv']
-    for folder in folders: files.extend(get_csv_files(drive_service, folder['id']))
+    
+    files = [f for f in res if f['mimeType'] == 'text/csv' or f['name'].endswith('.csv')]
+    folders = [f for f in res if f['mimeType'] == 'application/vnd.google-apps.folder']
+    
+    for folder in folders: 
+        files.extend(get_csv_files(drive_service, folder['id']))
     return files
 
 @st.cache_data(ttl=3600)
 def fetch_imperial_data():
     drive_service, _ = init_services()
     kb, fl = "", []
-    ids = {"总榜": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", "分板": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"}
+    
+    # 文件夹定位
+    ids = {
+        "总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", 
+        "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"
+    }
     
     for f_type, f_id in ids.items():
         for f in get_csv_files(drive_service, f_id):
