@@ -55,7 +55,7 @@ def get_all_csv_recursive(folder_id):
 def fetch_imperial_data():
     kb = ""
     fl = []
-    ids = {"总榜文件夹": "1AeX5t-DngAZaVPpIJogEpU0M9-Q_bNj0", "分板数据仓": "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"}
+    ids = {"总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"}
     for f_type, f_id in ids.items():
         files = get_all_csv_recursive(f_id)
         for f in files:
