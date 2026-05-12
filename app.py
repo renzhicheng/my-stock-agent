@@ -9,21 +9,21 @@ import io
 import json
 
 # --- 1. 样式配置 ---
-st.set_page_config(page_title="赛博大明·决策链", layout="wide")
+st.set_page_config(page_title="赛博大明·圣旨决策链", layout="wide")
 
 st.markdown("""
     <style>
-    .decree-box { 
-        background-color: #fffde7; padding: 15px; border: 2px dashed #d4af37; 
-        border-radius: 10px; margin-top: 30px; margin-bottom: 10px; color: #5d4037; font-weight: bold;
-    }
     .report-card { 
-        padding: 20px; border-radius: 12px; margin-bottom: 20px; 
-        background-color: #fcfaf2; box-shadow: 2px 2px 8px rgba(0,0,0,0.05); color: #333;
+        padding: 25px; border-radius: 15px; margin-bottom: 25px; 
+        background-color: #fcfaf2; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
-    .cabinet-border { border-left: 8px solid #8b0000; }
-    .jinyiwei-border { border-left: 8px solid #2f4f4f; }
-    .header-text { font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; display: block; }
+    .cabinet-border { border-left: 10px solid #8b0000; }
+    .jinyiwei-border { border-left: 10px solid #2f4f4f; }
+    .emperor-decree { 
+        background-color: #fffde7; padding: 15px; border-radius: 10px; 
+        border: 2px dashed #d4af37; margin-bottom: 20px; color: #5d4037; font-weight: bold;
+    }
+    .header-text { font-size: 1.2rem; font-weight: bold; margin-bottom: 8px; display: block; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -51,109 +51,103 @@ def get_all_csv_recursive(folder_id):
     except: pass
     return all_files
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600)
 def fetch_imperial_data():
-    kb, fl = "", []
-    # 🚨 已应用万岁爷最新的 ID 🚨
-    ids = {
-        "总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", 
-        "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"
-    }
+    kb = ""
+    fl = []
+    ids = {"总榜文件夹": "1AeX5t-DngAZaVPpIJogEpU0M9-Q_bNj0", "分板数据仓": "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"}
     for f_type, f_id in ids.items():
         files = get_all_csv_recursive(f_id)
         for f in files:
             fl.append(f"{f_type} -> {f['name']}")
             try:
                 request = drive_service.files().get_media(fileId=f['id'])
-                fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
                 done = False
                 while not done: _, done = downloader.next_chunk()
-                fh.seek(0); df = pd.read_csv(fh, encoding='utf-8-sig')
+                fh.seek(0)
+                df = pd.read_csv(fh, encoding='utf-8-sig')
                 kb += f"\n【文件：{f['name']}】\n{df.to_string(index=False)}\n"
             except: continue
     return kb, fl
 
-@st.cache_resource
-def get_best_model():
+def get_best_gemini():
     try:
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         flash = [m for m in models if 'flash' in m.lower()]
         return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
     except: return 'models/gemini-1.5-flash'
 
-# --- 4. 历史记录初始化 ---
-# 关键：创建一个 history 列表，用来存储每一次互动的“全家桶”
-if "decree_history" not in st.session_state:
-    st.session_state.decree_history = []
+# --- 4. 界面逻辑 ---
 
-# --- 5. 界面逻辑 ---
 st.title("🏮 赛博大明·智投决策中心")
 
 with st.sidebar:
-    st.header("⚙️ 档案库")
-    if st.button("🔄 同步并清空记录", type="primary", use_container_width=True):
+    st.header("⚙️ 档案库管理")
+    if st.button("🔄 同步最新奏章", type="primary", use_container_width=True):
         st.cache_data.clear()
-        st.session_state.decree_history = []
         st.rerun()
     st.divider()
     knowledge, files = fetch_imperial_data()
-    st.success(f"已录入 {len(files)} 份奏章")
+    st.success(f"已录入 {len(files)} 份数据")
     for f in files: st.caption(f"📄 {f}")
 
-# --- 6. 圣旨发布区 ---
+# --- 5. 圣旨输入区 ---
 st.subheader("📝 宣旨与批复")
-user_input = st.chat_input("朕有旨意（例如：复盘今日成交额前十，对比昨日异动）...")
+user_decree = st.chat_input("朕有旨意（例如：复盘今日成交额前十、分析半导体异动等）...")
 
-if user_input:
-    # 这一步会触发 AI 计算，并将结果打包存入历史
-    with st.status("重臣正在接旨商议中...") as status:
-        try:
-            # 1. 内阁首辅 (Gemini) 响应
-            st.write("内阁正在拟票...")
-            m_name = get_best_model()
-            m = genai.GenerativeModel(m_name)
-            cab_p = f"你是一位顶级金融策略分析师。万岁爷旨意：{user_input}\n数据：\n{knowledge}\n请给出宏观与板块分析，严禁文言文。"
-            cab_res = m.generate_content(cab_p).text
-            
-            # 2. 锦衣卫 (DeepSeek) 审计
-            st.write("锦衣卫正在审计...")
-            j_p = f"你是一位量化资金面分析师。参考内阁意见：{cab_res}\n旨意：{user_input}\n数据：\n{knowledge}\n请指出内阁遗漏的资金博弈细节，犀利指出风险。"
-            j_res = deepseek_client.chat.completions.create(
-                model="deepseek-v4-pro", # 或 deepseek-chat
-                messages=[{"role": "user", "content": j_p}]
-            ).choices[0].message.content
-            
-            # 3. 将这一组对话存入历史记录
-            st.session_state.decree_history.append({
-                "decree": user_input,
-                "cabinet": cab_res,
-                "jinyiwei": j_res
-            })
-            status.update(label="✅ 朝议完毕", state="complete")
-        except Exception as e:
-            st.error(f"传旨异常: {e}")
-
-# --- 7. 渲染全量历史记录 ---
-# 像“帖子列表”一样，从旧到新展示所有互动
-for idx, entry in enumerate(st.session_state.decree_history):
-    # 展示圣旨
-    st.markdown(f"<div class='decree-box'>第 {idx+1} 议 · 奉天承运：{entry['decree']}</div>", unsafe_allow_html=True)
+if user_decree:
+    # 记录在 Session State 中以便展示
+    st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{user_decree}</div>", unsafe_allow_html=True)
     
-    # 展示内阁回复
-    st.markdown("<span class='header-text'>📜 内阁首辅 (Gemini) 复盘意见</span>", unsafe_allow_html=True)
-    st.markdown(f"<div class='report-card cabinet-border'>{entry['cabinet']}</div>", unsafe_allow_html=True)
-    
-    # 展示锦衣卫回复
-    st.markdown("<span class='header-text'>🦅 锦衣卫 (DeepSeek) 资金刺探</span>", unsafe_allow_html=True)
-    st.markdown(f"<div class='report-card jinyiwei-border'>{entry['jinyiwei']}</div>", unsafe_allow_html=True)
-    
-    st.divider()
+    # --- 第一步：内阁接旨 (Gemini) ---
+    cabinet_container = st.container()
+    with cabinet_container:
+        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (Gemini) 宏观复盘</span>", unsafe_allow_html=True)
+        with st.spinner("首辅正在针对旨意拟票..."):
+            try:
+                m = genai.GenerativeModel(get_best_gemini())
+                cabinet_prompt = f"""
+                你是一位顶级的金融【宏观策略分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【原始奏章数据】：{knowledge}
+                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑。严禁使用文言文，保持现代专业口吻。
+                """
+                res = m.generate_content(cabinet_prompt)
+                cabinet_output = res.text
+                st.markdown(f"<div class='report-card cabinet-border'>{cabinet_output}</div>", unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"内阁传旨受阻：{e}")
+                cabinet_output = "内阁未能给出有效研判。"
 
-if not st.session_state.decree_history:
-    st.info("💡 请在下方输入框中发布首道圣旨，开启今日廷议。")
+    # --- 第二步：锦衣卫领命 (DeepSeek) ---
+    jinyiwei_container = st.container()
+    with jinyiwei_container:
+        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (DeepSeek) 资金刺探与审计</span>", unsafe_allow_html=True)
+        with st.spinner("都指挥使正在根据内阁结论进行复核..."):
+            try:
+                # 锦衣卫会参考 Gemini 的结论
+                jinyiwei_prompt = f"""
+                你是一位顶级的金融【量化资金面分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【内阁首辅的初步分析】：{cabinet_output}
+                【原始奏章数据】：{knowledge}
+                
+                指令：
+                1. 针对万岁爷的旨意，刺探数据中的主力资金轨迹、异动标的。
+                2. 审计内阁首辅的结论。如果他遗漏了资金面的博弈细节，或者判断有误，请直接指出并更正。
+                风格：专业、冷静、犀利，严禁使用文言文。
+                """
+                res = deepseek_client.chat.completions.create(
+                    model="deepseek-v4-pro", 
+                    messages=[{"role": "user", "content": jinyiwei_prompt}],
+                    temperature=0.3
+                )
+                st.markdown(f"<div class='report-card jinyiwei-border'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"锦衣卫探报受阻：{e}")
+else:
+    st.info("💡 请在下方输入框中下达旨意，开启今日廷议。")
 
-if not st.session_state.decree_history:
-    st.info("💡 请在下方输入框中发布圣旨。")
-
-if not st.session_state.decree_history:
-    st.info("💡 请在下方输入框中发布首道圣旨，开启今日廷议。")
+st.divider()
