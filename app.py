@@ -57,7 +57,7 @@ for turn in st.session_state.chat_history:
 # ==========================================
 # 4. 底部输入框监听
 # ==========================================
-chat_input = st.chat_input("输入新的旨意 (如：明天XX个股能接吗？)...")
+chat_input = st.chat_input("宣旨 (如：明天XX个股能接吗？)...")
 
 if chat_input:
     st.session_state.current_scenario = "chat"  # 标记为日常追问模式
@@ -119,7 +119,7 @@ if st.session_state.execute_flag:
 # 6. 初始空白页 (没历史记录，也没在执行时显示)
 # ==========================================
 elif len(st.session_state.chat_history) == 0:
-    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>大明智投引擎已就绪</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>诸位大臣已就绪</h2>", unsafe_allow_html=True)
     st.markdown("<div class='center-button-wrapper'></div>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 1.5, 1])
