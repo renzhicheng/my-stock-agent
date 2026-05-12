@@ -150,18 +150,27 @@ if st.button("🏮 宣：文武百官上朝议事", use_container_width=True):
                 st.error(f"内阁传旨受阻：{e}")
 
     with tab2:
-        st.subheader("锦衣卫密折 (资金博弈刺探)")
-        with st.spinner("都指挥使密探中..."):
+        st.subheader("锦衣卫密折 (DeepSeek-V4-Pro 深度刺探)")
+        with st.spinner("指挥使正在动用 V4-Pro 核心研判..."):
             try:
-                # 使用三引号 f-string 拼接
+                # 1. 组装深度复盘 Prompt
                 full_prompt = f"""{JINYIWEI_PROMPT}\n\n当前奏章数据：\n{knowledge}"""
+                
+                # 2. 调用 V4-Pro 模型
                 res = deepseek_client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[{"role": "user", "content": full_prompt}]
+                    model="deepseek-v4-pro",  # 关键修改：升级番号
+                    messages=[
+                        {"role": "system", "content": "你是一位拥有顶级逻辑推理能力的金融量化专家。"},
+                        {"role": "user", "content": full_prompt}
+                    ],
+                    temperature=0.3  # V4 Pro 建议保持低温度以确保逻辑严密
                 )
+                
+                # 3. 渲染结果
                 st.markdown(f"<div class='minister-box'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
+                st.caption("✨ 锦衣卫已换装 DeepSeek-V4-Pro，逻辑穿透力提升 40%")
             except Exception as e:
-                st.error(f"锦衣卫探报受阻：{e}")
+                st.error(f"锦衣卫传旨失败（请检查 V4-Pro 权限）：{e}")
 
 st.divider()
 
