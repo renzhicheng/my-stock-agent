@@ -9,20 +9,25 @@ import io
 import json
 
 # --- 1. 样式配置 ---
-st.set_page_config(page_title="赛博大明·廷议接龙", layout="wide")
+st.set_page_config(page_title="赛博大明·圣旨决策链", layout="wide")
 
 st.markdown("""
     <style>
     .report-card { 
-        padding: 25px; border-radius: 15px; margin-bottom: 25px; border-left: 10px solid #d4af37;
+        padding: 25px; border-radius: 15px; margin-bottom: 25px; 
         background-color: #fcfaf2; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
-    .cabinet-header { color: #8b0000; font-size: 1.5rem; font-weight: bold; margin-bottom: 10px; }
-    .jinyiwei-header { color: #2f4f4f; font-size: 1.5rem; font-weight: bold; margin-bottom: 10px; }
+    .cabinet-border { border-left: 10px solid #8b0000; }
+    .jinyiwei-border { border-left: 10px solid #2f4f4f; }
+    .emperor-decree { 
+        background-color: #fffde7; padding: 15px; border-radius: 10px; 
+        border: 2px dashed #d4af37; margin-bottom: 20px; color: #5d4037; font-weight: bold;
+    }
+    .header-text { font-size: 1.2rem; font-weight: bold; margin-bottom: 8px; display: block; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 权限初始化 (保持不变) ---
+# --- 2. 权限初始化 ---
 try:
     gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
     credentials = service_account.Credentials.from_service_account_info(gcp_info)
@@ -32,7 +37,7 @@ try:
 except Exception as e:
     st.error(f"❌ 司礼监初始化异常：{e}")
 
-# --- 3. 核心工具函数 (保持不变) ---
+# --- 3. 核心工具函数 ---
 def get_all_csv_recursive(folder_id):
     all_files = []
     query = f"'{folder_id}' in parents and (name contains '.csv' or mimeType = 'text/csv')"
@@ -50,7 +55,7 @@ def get_all_csv_recursive(folder_id):
 def fetch_imperial_data():
     kb = ""
     fl = []
-    ids = {"总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"}
+    ids = {"总榜文件夹": "1AeX5t-DngAZaVPpIJogEpU0M9-Q_bNj0", "分板数据仓": "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"}
     for f_type, f_id in ids.items():
         files = get_all_csv_recursive(f_id)
         for f in files:
@@ -63,7 +68,7 @@ def fetch_imperial_data():
                 while not done: _, done = downloader.next_chunk()
                 fh.seek(0)
                 df = pd.read_csv(fh, encoding='utf-8-sig')
-                kb += f"\n【奏章：{f['name']}】\n{df.to_string(index=False)}\n"
+                kb += f"\n【文件：{f['name']}】\n{df.to_string(index=False)}\n"
             except: continue
     return kb, fl
 
@@ -74,73 +79,75 @@ def get_best_gemini():
         return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
     except: return 'models/gemini-1.5-flash'
 
-# --- 4. 专业级廷议 Prompt (接龙专用) ---
+# --- 4. 界面逻辑 ---
 
-CABINET_PROMPT = """你是一位顶级的金融【宏观策略分析师】。
-任务：请基于 A 股全量奏章数据，进行深度复盘。
-要求：重点分析板块轮动逻辑与行业基本面，给出专业的研判结论。
-风格：严禁使用古风，保持现代、干练。"""
-
-JINYIWEI_PROMPT = """你是一位顶级的金融【量化资金面分析师】。
-任务：
-1. 审核并刺探原始数据中的异动（主力轨迹、异常标的）。
-2. 【核心任务】参考并评估刚才“内阁首辅”给出的分析结论。指出他是否遗漏了资金面的博弈细节，或者是否被表象迷惑。
-要求：像情报员一样冷酷犀利，发现风险请标记为【红色警告】。
-风格：严禁使用古风。"""
-
-# --- 5. 界面逻辑 ---
-
-st.title("🏮 赛博大明·双臣廷议链")
+st.title("🏮 赛博大明·智投决策中心")
 
 with st.sidebar:
-    st.header("⚙️ 档案库")
-    if st.button("🔄 宣：同步最新奏章", type="primary", use_container_width=True):
+    st.header("⚙️ 档案库管理")
+    if st.button("🔄 同步最新奏章", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     st.divider()
     knowledge, files = fetch_imperial_data()
-    st.success(f"已录入 {len(files)} 份奏章")
+    st.success(f"已录入 {len(files)} 份数据")
+    for f in files: st.caption(f"📄 {f}")
 
-# 廷议主流程
-if st.button("🏮 宣：文武百官廷议接龙", use_container_width=True):
+# --- 5. 圣旨输入区 ---
+st.subheader("📝 宣旨与批复")
+user_decree = st.chat_input("朕有旨意（例如：复盘今日成交额前十、分析半导体异动等）...")
+
+if user_decree:
+    # 记录在 Session State 中以便展示
+    st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{user_decree}</div>", unsafe_allow_html=True)
     
-    # --- 第一阶段：内阁发言 ---
-    with st.container():
-        st.markdown("<div class='cabinet-header'>📜 第一篇：内阁首辅 (Gemini) 宏观复盘</div>", unsafe_allow_html=True)
-        with st.spinner("首辅正在拟票..."):
+    # --- 第一步：内阁接旨 (Gemini) ---
+    cabinet_container = st.container()
+    with cabinet_container:
+        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (Gemini) 宏观复盘</span>", unsafe_allow_html=True)
+        with st.spinner("首辅正在针对旨意拟票..."):
             try:
                 m = genai.GenerativeModel(get_best_gemini())
-                cabinet_res = m.generate_content(f"{CABINET_PROMPT}\n\n奏章数据：\n{knowledge}")
-                cabinet_output = cabinet_res.text
-                st.markdown(f"<div class='report-card'>{cabinet_output}</div>", unsafe_allow_html=True)
+                cabinet_prompt = f"""
+                你是一位顶级的金融【宏观策略分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【原始奏章数据】：{knowledge}
+                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑。严禁使用文言文，保持现代专业口吻。
+                """
+                res = m.generate_content(cabinet_prompt)
+                cabinet_output = res.text
+                st.markdown(f"<div class='report-card cabinet-border'>{cabinet_output}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"内阁传旨受阻：{e}")
-                cabinet_output = "（内阁因故未能发表意见）"
+                cabinet_output = "内阁未能给出有效研判。"
 
-    # --- 第二阶段：锦衣卫发言 (依赖第一阶段结论) ---
-    with st.container():
-        st.markdown("<div class='jinyiwei-header'>🦅 第二篇：锦衣卫 (DeepSeek) 资金刺探与审计</div>", unsafe_allow_html=True)
-        with st.spinner("都指挥使正在秘密复核..."):
+    # --- 第二步：锦衣卫领命 (DeepSeek) ---
+    jinyiwei_container = st.container()
+    with jinyiwei_container:
+        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (DeepSeek) 资金刺探与审计</span>", unsafe_allow_html=True)
+        with st.spinner("都指挥使正在根据内阁结论进行复核..."):
             try:
-                # 核心：将 Gemini 的结论喂给 DeepSeek
-                combined_prompt = f"""
-                【参考内阁结论】：
-                {cabinet_output}
+                # 锦衣卫会参考 Gemini 的结论
+                jinyiwei_prompt = f"""
+                你是一位顶级的金融【量化资金面分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【内阁首辅的初步分析】：{cabinet_output}
+                【原始奏章数据】：{knowledge}
                 
-                【原始数据】：
-                {knowledge}
-                
-                【执行指令】：
-                {JINYIWEI_PROMPT}
+                指令：
+                1. 针对万岁爷的旨意，刺探数据中的主力资金轨迹、异动标的。
+                2. 审计内阁首辅的结论。如果他遗漏了资金面的博弈细节，或者判断有误，请直接指出并更正。
+                风格：专业、冷静、犀利，严禁使用文言文。
                 """
                 res = deepseek_client.chat.completions.create(
-                    model="deepseek-v4-pro", # 或使用 deepseek-chat
-                    messages=[{"role": "user", "content": combined_prompt}],
+                    model="deepseek-v4-pro", 
+                    messages=[{"role": "user", "content": jinyiwei_prompt}],
                     temperature=0.3
                 )
-                st.markdown(f"<div class='report-card'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='report-card jinyiwei-border'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"锦衣卫探报受阻：{e}")
+else:
+    st.info("💡 请在下方输入框中下达旨意，开启今日廷议。")
 
 st.divider()
-# 追问区（略，保持原样即可）
