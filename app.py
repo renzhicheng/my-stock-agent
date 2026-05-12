@@ -2,7 +2,7 @@ import streamlit as st
 import logic
 from prompts import ROLE_CHAIN
 
-st.set_page_config(page_title="赛博大明王朝", layout="centered")
+st.set_page_config(page_title="赛博大明王朝投策堂", layout="centered")
 
 st.markdown("""
     <style>
