@@ -26,9 +26,9 @@ credentials = service_account.Credentials.from_service_account_info(gcp_info)
 drive_service = build('drive', 'v3', credentials=credentials)
 
 # 初始化内阁 (Gemini)
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+genai.configure(api_key=st.secrets["AIzaSyDO76E-0W4hkG3v8UK-rfV9lqenSGTaFD4"])
 # 初始化锦衣卫 (DeepSeek)
-deepseek_client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+deepseek_client = OpenAI(api_key=st.secrets["sk-6d77b9b9f009413bbe856e4de4d59719"], base_url="https://api.deepseek.com")
 
 # --- 3. 奏章档案路径 ---
 FOLDER_IDS = {
