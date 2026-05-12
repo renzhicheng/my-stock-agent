@@ -9,12 +9,21 @@ import io
 import json
 
 # --- 1. 样式配置 ---
-st.set_page_config(page_title="赛博大明·智投决策中心", layout="wide")
+st.set_page_config(page_title="赛博大明·圣旨决策链", layout="wide")
 
 st.markdown("""
     <style>
-    .report-card { padding: 25px; border-radius: 15px; margin-bottom: 25px; background-color: #fcfaf2; border-left: 10px solid #d4af37; color: #333; }
-    .header-text { font-size: 1.3rem; font-weight: bold; margin-bottom: 10px; display: block; }
+    .report-card { 
+        padding: 25px; border-radius: 15px; margin-bottom: 25px; 
+        background-color: #fcfaf2; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+    .cabinet-border { border-left: 10px solid #8b0000; }
+    .jinyiwei-border { border-left: 10px solid #2f4f4f; }
+    .emperor-decree { 
+        background-color: #fffde7; padding: 15px; border-radius: 10px; 
+        border: 2px dashed #d4af37; margin-bottom: 20px; color: #5d4037; font-weight: bold;
+    }
+    .header-text { font-size: 1.2rem; font-weight: bold; margin-bottom: 8px; display: block; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -26,19 +35,9 @@ try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     deepseek_client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 except Exception as e:
-    st.error(f"❌ 司礼监配置异常：{e}")
+    st.error(f"❌ 司礼监初始化异常：{e}")
 
-# --- 3. 核心功能函数 (加入缓存逻辑) ---
-@st.cache_resource
-def get_cached_gemini_model():
-    """将点将结果缓存，避免重复宣召"""
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        flash = [m for m in models if 'flash' in m.lower()]
-        return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
-    except:
-        return 'models/gemini-1.5-flash'
-
+# --- 3. 核心工具函数 ---
 def get_all_csv_recursive(folder_id):
     all_files = []
     query = f"'{folder_id}' in parents and (name contains '.csv' or mimeType = 'text/csv')"
@@ -52,90 +51,103 @@ def get_all_csv_recursive(folder_id):
     except: pass
     return all_files
 
-@st.cache_data(ttl=600) # 缩短缓存时间，确保能读到新奏章
+@st.cache_data(ttl=3600)
 def fetch_imperial_data():
-    kb, fl = "", []
-    ids = {"总榜文件夹": "1bcO3nIarKPKK8J3VK9n0nnzDobuP3i5t", "分板数据仓": "1HwQpIGSf5ggs-a-xWGa8deXEhF5sDNtv"}
+    kb = ""
+    fl = []
+    ids = {"总榜文件夹": "1AeX5t-DngAZaVPpIJogEpU0M9-Q_bNj0", "分板数据仓": "1xJu7ukLQ7li5jNVhdlISehkogxxvW_Vg"}
     for f_type, f_id in ids.items():
         files = get_all_csv_recursive(f_id)
         for f in files:
             fl.append(f"{f_type} -> {f['name']}")
             try:
                 request = drive_service.files().get_media(fileId=f['id'])
-                fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
                 done = False
                 while not done: _, done = downloader.next_chunk()
-                fh.seek(0); df = pd.read_csv(fh, encoding='utf-8-sig')
-                kb += f"\n【奏章：{f['name']}】\n{df.to_string(index=False)}\n"
+                fh.seek(0)
+                df = pd.read_csv(fh, encoding='utf-8-sig')
+                kb += f"\n【文件：{f['name']}】\n{df.to_string(index=False)}\n"
             except: continue
     return kb, fl
 
-# --- 4. 状态初始化 ---
-if "cab_res" not in st.session_state: st.session_state.cab_res = ""
-if "jiy_res" not in st.session_state: st.session_state.jiy_res = ""
-if "chat_log" not in st.session_state: st.session_state.chat_log = []
+def get_best_gemini():
+    try:
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        flash = [m for m in models if 'flash' in m.lower()]
+        return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
+    except: return 'models/gemini-1.5-flash'
 
-# --- 5. 侧边栏 ---
+# --- 4. 界面逻辑 ---
+
+st.title("🏮 赛博大明·智投决策中心")
+
 with st.sidebar:
-    st.title("🏮 赛博大明")
-    if st.button("🔄 同步奏章", type="primary"):
+    st.header("⚙️ 档案库管理")
+    if st.button("🔄 同步最新奏章", type="primary", use_container_width=True):
         st.cache_data.clear()
-        st.session_state.cab_res = ""; st.session_state.jiy_res = ""; st.session_state.chat_log = []
         st.rerun()
+    st.divider()
     knowledge, files = fetch_imperial_data()
-    st.success(f"已录入 {len(files)} 份奏章")
+    st.success(f"已录入 {len(files)} 份数据")
+    for f in files: st.caption(f"📄 {f}")
 
-# --- 6. 廷议按钮 ---
-if st.button("🏮 宣：文武百官上朝议事", use_container_width=True):
-    # 第一阶段：内阁 (Gemini)
-    with st.status("内阁首辅正在审阅奏章...", expanded=True) as status:
-        try:
-            m_name = get_cached_gemini_model()
-            st.write(f"已锁定官阶：{m_name}")
-            m = genai.GenerativeModel(m_name)
-            
-            # 数据量预警
-            if len(knowledge) > 30000:
-                st.write("⚠️ 奏章堆积如山（数据量大），首辅批复可能稍慢...")
-            
-            st.write("正在撰写复盘研报...")
-            prompt = f"你是一位顶级宏观策略分析师。请基于以下奏章数据进行专业深度复盘：\n{knowledge}"
-            res = m.generate_content(prompt)
-            st.session_state.cab_res = res.text
-            status.update(label="✅ 内阁复盘完毕", state="complete")
-        except Exception as e:
-            st.error(f"内阁受阻：{e}")
+# --- 5. 圣旨输入区 ---
+st.subheader("📝 宣旨与批复")
+user_decree = st.chat_input("朕有旨意（例如：复盘今日成交额前十、分析半导体异动等）...")
 
-    # 第二阶段：锦衣卫 (DeepSeek)
-    if st.session_state.cab_res:
-        with st.status("锦衣卫正在密核数据...") as status:
+if user_decree:
+    # 记录在 Session State 中以便展示
+    st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{user_decree}</div>", unsafe_allow_html=True)
+    
+    # --- 第一步：内阁接旨 (Gemini) ---
+    cabinet_container = st.container()
+    with cabinet_container:
+        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (Gemini) 宏观复盘</span>", unsafe_allow_html=True)
+        with st.spinner("首辅正在针对旨意拟票..."):
             try:
-                j_p = f"你是一位量化分析师。参考内阁分析：{st.session_state.cab_res}\n数据：{knowledge}\n请指出内阁遗漏的资金面细节。"
-                res = deepseek_client.chat.completions.create(model="deepseek-v4-pro", messages=[{"role": "user", "content": j_p}])
-                st.session_state.jiy_res = res.choices[0].message.content
-                status.update(label="✅ 锦衣卫刺探完毕", state="complete")
+                m = genai.GenerativeModel(get_best_gemini())
+                cabinet_prompt = f"""
+                你是一位顶级的金融【宏观策略分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【原始奏章数据】：{knowledge}
+                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑。严禁使用文言文，保持现代专业口吻。
+                """
+                res = m.generate_content(cabinet_prompt)
+                cabinet_output = res.text
+                st.markdown(f"<div class='report-card cabinet-border'>{cabinet_output}</div>", unsafe_allow_html=True)
             except Exception as e:
-                st.error(f"锦衣卫受阻：{e}")
+                st.error(f"内阁传旨受阻：{e}")
+                cabinet_output = "内阁未能给出有效研判。"
 
-# --- 7. 展示与对话 ---
-if st.session_state.cab_res:
-    st.markdown("<span class='header-text'>📜 内阁复盘报告</span>", unsafe_allow_html=True)
-    st.markdown(f"<div class='report-card'>{st.session_state.cab_res}</div>", unsafe_allow_html=True)
-
-if st.session_state.jiy_res:
-    st.markdown("<span class='header-text'>🦅 锦衣卫密折</span>", unsafe_allow_html=True)
-    st.markdown(f"<div class='report-card' style='border-left:10px solid #2f4f4f;'>{st.session_state.jiy_res}</div>", unsafe_allow_html=True)
-
-    st.divider(); st.subheader("💬 圣裁互动")
-    for chat in st.session_state.chat_log:
-        with st.chat_message(chat["role"]): st.markdown(chat["content"])
-
-    if ask := st.chat_input("朕还有话要问..."):
-        st.session_state.chat_log.append({"role": "user", "content": ask})
-        with st.chat_message("user"): st.markdown(ask)
-        with st.chat_message("assistant"):
+    # --- 第二步：锦衣卫领命 (DeepSeek) ---
+    jinyiwei_container = st.container()
+    with jinyiwei_container:
+        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (DeepSeek) 资金刺探与审计</span>", unsafe_allow_html=True)
+        with st.spinner("都指挥使正在根据内阁结论进行复核..."):
             try:
-                m = genai.GenerativeModel(get_cached_gemini_model())
-                res = m.generate_content(f"基于奏章：\n{knowledge}\n及复盘：\n{st.session_state.jiy_res}\n回答：{ask}")
-                st.markdown(res.text); st.session_state.chat_log.append({"role": "assistant", "content": res.text})
-            except Exception as e: st.error(f"对话受阻：{e}")
+                # 锦衣卫会参考 Gemini 的结论
+                jinyiwei_prompt = f"""
+                你是一位顶级的金融【量化资金面分析师】。
+                【万岁爷的旨意】：{user_decree}
+                【内阁首辅的初步分析】：{cabinet_output}
+                【原始奏章数据】：{knowledge}
+                
+                指令：
+                1. 针对万岁爷的旨意，刺探数据中的主力资金轨迹、异动标的。
+                2. 审计内阁首辅的结论。如果他遗漏了资金面的博弈细节，或者判断有误，请直接指出并更正。
+                风格：专业、冷静、犀利，严禁使用文言文。
+                """
+                res = deepseek_client.chat.completions.create(
+                    model="deepseek-v4-pro", 
+                    messages=[{"role": "user", "content": jinyiwei_prompt}],
+                    temperature=0.3
+                )
+                st.markdown(f"<div class='report-card jinyiwei-border'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"锦衣卫探报受阻：{e}")
+else:
+    st.info("💡 请在下方输入框中下达旨意，开启今日廷议。")
+
+st.divider()
