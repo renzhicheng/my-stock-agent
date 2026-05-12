@@ -6,13 +6,40 @@ st.set_page_config(page_title="赛博大明王朝投策堂", layout="centered")
 
 st.markdown("""
     <style>
-    .block-container { max-width: 850px; padding-top: 2rem; padding-bottom: 100px; }
-    .report-card { padding: 24px; border-radius: 12px; margin-bottom: 24px; background-color: #ffffff; border: 1px solid #eaeaea; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); font-size: 15px; line-height: 1.7; color: #2c3e50; }
+    .block-container { max-width: 850px; padding-top: 2rem; padding-bottom: 100px; overflow-x: hidden; }
+    
+    .report-card { 
+        padding: 24px; 
+        border-radius: 12px; 
+        margin-bottom: 24px; 
+        background-color: #ffffff; 
+        border: 1px solid #eaeaea; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
+        font-size: 15px; 
+        line-height: 1.7; 
+        color: #2c3e50; 
+        /* 防止卡片自身被内部元素撑破 */
+        overflow-x: auto; 
+    }
+    
     .role-title { font-size: 1rem; font-weight: 600; color: #1a1a1a; margin-bottom: 16px; display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
     .emperor-decree { background-color: #f7f7f8; padding: 16px 24px; border-radius: 12px; margin-bottom: 30px; color: #1a1a1a; font-weight: 600; border-left: 4px solid #4a5568; }
     .history-divider { border-top: 2px dashed #eaeaea; margin: 40px 0; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     .center-button-wrapper { margin-top: 30px; }
+
+    /* 🔥 新增：专门解决手机端表格左右晃动的核心 CSS */
+    .report-card table {
+        display: block !important;
+        width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch; /* 让苹果 iOS 设备的横向滑动更丝滑 */
+    }
+    
+    .report-card th, .report-card td {
+        min-width: 80px; /* 避免表格太挤 */
+        white-space: nowrap; /* 强制表格内容不换行，保持整齐，配合横向滑动使用 */
+    }
     </style>
 """, unsafe_allow_html=True)
 
