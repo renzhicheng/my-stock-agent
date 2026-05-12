@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
 from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -32,7 +31,7 @@ try:
     gcp_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
     credentials = service_account.Credentials.from_service_account_info(gcp_info)
     drive_service = build('drive', 'v3', credentials=credentials)
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # 初始化 DeepSeek 客户端
     deepseek_client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 except Exception as e:
     st.error(f"❌ 司礼监初始化异常：{e}")
@@ -72,12 +71,18 @@ def fetch_imperial_data():
             except: continue
     return kb, fl
 
-def get_best_gemini():
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        flash = [m for m in models if 'flash' in m.lower()]
-        return sorted(flash, reverse=True)[0] if flash else 'models/gemini-1.5-flash'
-    except: return 'models/gemini-1.5-flash'
+# 新增：统一的 DeepSeek 调用包装函数
+def ask_deepseek(system_prompt, user_content, model="deepseek-chat", temp=0.3):
+    """封装多角色调用的核心函数，通过 system_prompt 区分扮演角色"""
+    response = deepseek_client.chat.completions.create(
+        model=model, # 如果你使用的是特殊的代理渠道模型名，可以改回 "deepseek-v4-pro"
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ],
+        temperature=temp
+    )
+    return response.choices[0].message.content
 
 # --- 4. 界面逻辑 ---
 
@@ -101,50 +106,46 @@ if user_decree:
     # 记录在 Session State 中以便展示
     st.markdown(f"<div class='emperor-decree'>奉天承运，皇帝诏曰：{user_decree}</div>", unsafe_allow_html=True)
     
-    # --- 第一步：内阁接旨 (Gemini) ---
+    # --- 第一步：内阁接旨 (DeepSeek 扮演首辅) ---
     cabinet_container = st.container()
     with cabinet_container:
-        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (Gemini) 宏观复盘</span>", unsafe_allow_html=True)
+        st.markdown("<span class='header-text'>📜 第一议：内阁首辅 (宏观复盘)</span>", unsafe_allow_html=True)
         with st.spinner("首辅正在针对旨意拟票..."):
             try:
-                m = genai.GenerativeModel(get_best_gemini())
+                cabinet_sys = "你是一位顶级的金融【宏观策略分析师】，现在正在扮演明朝内阁首辅处理政务。"
                 cabinet_prompt = f"""
-                你是一位顶级的金融【宏观策略分析师】。
                 【万岁爷的旨意】：{user_decree}
                 【原始奏章数据】：{knowledge}
-                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑。严禁使用文言文，保持现代专业口吻。
+                
+                请基于上述数据和旨意进行专业分析，重点关注板块轮动逻辑、大盘宏观趋势。
+                要求：严禁使用文言文，保持现代金融专业口吻，以宏观大局观为主。
                 """
-                res = m.generate_content(cabinet_prompt)
-                cabinet_output = res.text
+                cabinet_output = ask_deepseek(system_prompt=cabinet_sys, user_content=cabinet_prompt)
                 st.markdown(f"<div class='report-card cabinet-border'>{cabinet_output}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"内阁传旨受阻：{e}")
                 cabinet_output = "内阁未能给出有效研判。"
 
-    # --- 第二步：锦衣卫领命 (DeepSeek) ---
+    # --- 第二步：锦衣卫领命 (DeepSeek 扮演都指挥使) ---
     jinyiwei_container = st.container()
     with jinyiwei_container:
-        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (DeepSeek) 资金刺探与审计</span>", unsafe_allow_html=True)
-        with st.spinner("都指挥使正在根据内阁结论进行复核..."):
+        st.markdown("<span class='header-text'>🦅 第二议：锦衣卫 (资金刺探与审计)</span>", unsafe_allow_html=True)
+        with st.spinner("都指挥使正在根据内阁结论进行复核与资金刺探..."):
             try:
-                # 锦衣卫会参考 Gemini 的结论
+                jinyiwei_sys = "你是一位顶级的金融【量化资金面分析师】，现在扮演明朝锦衣卫指挥使，负责暗查资金异动并审计内阁的言论。"
                 jinyiwei_prompt = f"""
-                你是一位顶级的金融【量化资金面分析师】。
                 【万岁爷的旨意】：{user_decree}
                 【内阁首辅的初步分析】：{cabinet_output}
                 【原始奏章数据】：{knowledge}
                 
                 指令：
-                1. 针对万岁爷的旨意，刺探数据中的主力资金轨迹、异动标的。
-                2. 审计内阁首辅的结论。如果他遗漏了资金面的博弈细节，或者判断有误，请直接指出并更正。
-                风格：专业、冷静、犀利，严禁使用文言文。
+                1. 针对万岁爷的旨意，通过数据刺探主力资金轨迹、异动标的（个股层面）。
+                2. 审计内阁首辅的宏观结论。如果他遗漏了资金面的博弈细节，或者判断有误，请毫不留情地直接指出并更正。
+                要求：风格专业、冷静、犀利。严禁使用文言文。
                 """
-                res = deepseek_client.chat.completions.create(
-                    model="deepseek-v4-pro", 
-                    messages=[{"role": "user", "content": jinyiwei_prompt}],
-                    temperature=0.3
-                )
-                st.markdown(f"<div class='report-card jinyiwei-border'>{res.choices[0].message.content}</div>", unsafe_allow_html=True)
+                # 这里可以适当调低 temperature 让锦衣卫更注重数字逻辑
+                jinyiwei_output = ask_deepseek(system_prompt=jinyiwei_sys, user_content=jinyiwei_prompt, temp=0.2)
+                st.markdown(f"<div class='report-card jinyiwei-border'>{jinyiwei_output}</div>", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"锦衣卫探报受阻：{e}")
 else:
