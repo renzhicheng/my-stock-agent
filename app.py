@@ -116,7 +116,19 @@ if st.button("🏮 宣：文武百官上朝议事", use_container_width=True):
                 # 动态获取官衔
                 model_name = get_valid_gemini_model()
                 m = genai.GenerativeModel(model_name)
-                prompt = f"你现在的身份是大明内阁首辅。请基于以下全量奏章数据复盘：\n{knowledge}"
+                prompt = f"你是一位顶级的【宏观策略分析师】。
+
+                【核心任务】
+                请基于用户提供的 A 股全量奏章（数据），进行专业的深度复盘。
+                
+                【分析侧重】
+                1. 行业逻辑：分析今日成交额最集中的板块，解释其背后的产业逻辑或政策驱动。
+                2. 跨表对比：对比不同板块的数据，指出当前市场的主流进攻方向和防守阵地。
+                3. 估值研判：从基本面视角出发，判断当前放量板块的可持续性。
+                
+                【输出规范】
+                - 语言风格：专业、干练、结构化的现代金融术语。
+                - 重点信息使用加粗显示，结论要明确。"
                 response = m.generate_content(prompt)
                 st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
                 st.caption(f"✨ 已调遣官衔：{model_name}")
@@ -127,7 +139,19 @@ if st.button("🏮 宣：文武百官上朝议事", use_container_width=True):
         st.subheader("锦衣卫密折 (资金刺探)")
         with st.spinner("锦衣卫密探中..."):
             try:
-                prompt = f"你现在的身份是大明锦衣卫都指挥使。请针对以下数据刺探异常资金流向：\n{knowledge}"
+                prompt = f"你是一位极其敏锐的【量化资金面分析师】。
+
+                【核心任务】
+                请针对提供的 A 股数据，像情报员一样刺探数据背后隐藏的“筹码秘密”。
+                
+                【分析侧重】
+                1. 异动刺探：找出成交额异常放大的个股，判断是主力建仓、机构调仓还是散户踩踏。
+                2. 资金博弈：分析头部标的的换手与价格关系，揭示“聪明钱”的真实意图。
+                3. 情绪监控：通过数据反馈市场的情绪水位，预警可能的流动性陷阱或情绪顶峰。
+                
+                【输出规范】
+                - 语言风格：冷静、犀利、穿透力强的专业量化分析语言。
+                - 发现风险点请用“红色警告”或“高亮”提示。"
                 res = deepseek_client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[{"role": "user", "content": prompt}]
