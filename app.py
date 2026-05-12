@@ -10,7 +10,7 @@ st.markdown("""
     /* 全局极简优化 */
     .block-container { max-width: 850px; padding-top: 2rem; }
     
-    /* 角色卡片：去除彩色边框，采用微阴影、纯白背景、柔和圆角 */
+    /* 角色卡片：微阴影、纯白背景、柔和圆角 */
     .report-card { 
         padding: 24px; 
         border-radius: 12px; 
@@ -49,10 +49,13 @@ st.markdown("""
     /* 隐藏默认多余元素 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* 自定义居中大按钮的外边距 */
+    .center-button-wrapper { margin-top: 30px; }
     </style>
 """, unsafe_allow_html=True)
 
-# 状态管理：只保留当前对话，不再无限堆叠历史
+# 状态管理
 if "current_decree" not in st.session_state:
     st.session_state.current_decree = None
 if "current_responses" not in st.session_state:
@@ -62,11 +65,7 @@ if "current_responses" not in st.session_state:
 with st.sidebar:
     st.title("🎛️ 控制台")
     
-    # 新增：上朝按钮（点击后自动下达旨意并触发大模型）
-    if st.button("🌅 升座上朝 (生成简报)", use_container_width=True, type="primary"):
-        st.session_state.current_decree = "开始分析当日的行情局势"
-        st.session_state.execute_flag = True
-        
+    # 侧边栏现在只保留数据管理功能
     if st.button("🔄 同步最新数据", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -84,15 +83,14 @@ if chat_input:
     st.session_state.current_decree = chat_input
     st.session_state.execute_flag = True
 
-# 执行推理逻辑 (只在收到新旨意或点击上朝时执行)
+# 执行推理逻辑
 if getattr(st.session_state, "execute_flag", False):
     decree = st.session_state.current_decree
     
-    # 清空之前的回复，实现“覆盖”效果
+    # 清空之前的回复，实现覆盖效果
     st.session_state.current_responses = [] 
     context_dict = {"user_decree": decree}
     
-    # 渲染当前旨意
     st.markdown(f"<div class='emperor-decree'>💬 旨意：{decree}</div>", unsafe_allow_html=True)
     
     for role in ROLE_CHAIN:
@@ -122,10 +120,9 @@ if getattr(st.session_state, "execute_flag", False):
             except Exception as e:
                 st.error(f"调用受阻：{e}")
                 
-    # 执行完毕，重置标记
     st.session_state.execute_flag = False 
 
-# 如果没有在执行，但存在已经生成的回复，将其渲染出来（保证刷新网页不白屏）
+# 渲染已有回复
 elif st.session_state.current_decree and st.session_state.current_responses:
     st.markdown(f"<div class='emperor-decree'>💬 旨意：{st.session_state.current_decree}</div>", unsafe_allow_html=True)
     for res in st.session_state.current_responses:
@@ -135,7 +132,19 @@ elif st.session_state.current_decree and st.session_state.current_responses:
                 {res['content']}
             </div>
         """, unsafe_allow_html=True)
+
+# --- 4. 初始空白页（新增主视觉引导按钮） ---
 else:
-    # 初始空白页面的欢迎引导
-    st.markdown("<h2 style='text-align: center; color: #bbb; margin-top: 120px; font-weight: 400;'>大明智投引擎已就绪</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #aaa;'>点击左侧「升座上朝」或在下方输入框下达旨意</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>大明智投引擎已就绪</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<div class='center-button-wrapper'></div>", unsafe_allow_html=True)
+    
+    # 使用 columns 将按钮居中，比例可以调节按钮的宽度 [左右空白边距, 按钮宽度, 左右空白边距]
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        if st.button("🌅 上朝 (生成今日简报)", use_container_width=True, type="primary"):
+            # 点击后直接赋予旨意，并打上执行标记
+            st.session_state.current_decree = "开始分析当日的行情局势"
+            st.session_state.execute_flag = True
+            # 立即强制刷新页面，进入上方的数据处理逻辑
+            st.rerun()
