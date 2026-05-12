@@ -8,7 +8,7 @@ import io
 import json
 
 # --- 1. 样式配置 ---
-st.set_page_config(page_title="赛博大明·圣旨决策链", layout="wide")
+st.set_page_config(page_title="赛博大明·圣旨", layout="wide")
 st.markdown("""
     <style>
     .report-card { padding: 25px; border-radius: 15px; margin-bottom: 25px; background-color: #fcfaf2; box-shadow: 2px 2px 10px rgba(0,0,0,0.05); }
