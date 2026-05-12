@@ -90,22 +90,34 @@ if st.button("🏮 开启双臣对话", use_container_width=True):
     
     # --- 修改 Tab 1 (Gemini) 里的调用部分 ---
     with tab1:
-        st.subheader("内阁首辅意见 (全量深度复盘)")
-        with st.spinner("首辅拟票中..."):
+    st.subheader("内阁首辅意见 (全量深度复盘)")
+    with st.spinner("首辅拟票中..."):
+        # --- 自动适配模型名称逻辑 ---
+        # 依次尝试：1.带路径的 Flash (最稳), 2.带路径的 Pro, 3.简写
+        possible_model_names = [
+            'models/gemini-1.5-flash', 
+            'models/gemini-1.5-pro', 
+            'gemini-1.5-flash'
+        ]
+        
+        response_text = None
+        for m_name in possible_model_names:
             try:
-                # 尝试使用 2026 年最稳健的模型名称
-                # 如果报错，请尝试更换为 'models/gemini-1.5-pro' 或 'models/gemini-1.5-flash'
-                model_name = 'gemini-1.5-pro' 
-                
-                m = genai.GenerativeModel(model_name)
-                prompt_text = f"你现在的身份是大明内阁首辅。请基于以下数据复盘：\n{knowledge}"
-                
+                m = genai.GenerativeModel(m_name)
+                # 显式指定系统提示词
+                prompt_text = f"你现在的身份是大明内阁首辅。当前日期是2026年5月12日。请基于以下全量数据进行复盘：\n{knowledge}"
                 response = m.generate_content(prompt_text)
-                st.markdown(f"<div class='minister-box'>{response.text}</div>", unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"⚠️ 内阁（Gemini）回应失败。错误类型：{type(e).__name__}")
-                st.info("💡 建议：请检查 Secrets 中的 GEMINI_API_KEY 是否正确，或尝试将代码中的模型名改为 'gemini-1.5-flash'")
+                response_text = response.text
+                if response_text:
+                    st.caption(f"✨ 已通过官衔 {m_name} 成功传达圣谕")
+                    break
+            except Exception:
+                continue # 如果这个名字不行，换下一个试试
+
+        if response_text:
+            st.markdown(f"<div class='minister-box'>{response_text}</div>", unsafe_allow_html=True)
+        else:
+            st.error("❌ 内阁首辅屡次宣召不到。建议：请前往 Google AI Studio 确认您的 API Key 是否已激活，并检查配额。")
 
     with tab2:
         st.subheader("锦衣卫密折 (资金流向刺探)")
