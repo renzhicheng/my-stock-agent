@@ -165,16 +165,31 @@ elif len(st.session_state.chat_history) == 0:
             st.rerun()
 
 # ==========================================
-# 📜 页面底部自动滚动脚本
+# 📜 页面底部自动滚动脚本 (终极锚点版)
 # ==========================================
+import streamlit.components.v1 as components
+
+# 1. 在页面真正的最底部，悄悄埋下一个看不见的“锚点”
+st.markdown("<div id='page-bottom'></div>", unsafe_allow_html=True)
+
+# 2. 注入 JS：等待半秒钟页面画完后，精准拉到锚点位置
 components.html(
     """
     <script>
-        // 找到 Streamlit 的主滚动容器并将其拉到最底部
-        var body = window.parent.document.querySelector(".main");
-        if (body) {
-            body.scrollTo(0, body.scrollHeight);
-        }
+        // 设置 500 毫秒的延迟，给 Streamlit 充足的时间把历史奏章渲染出来
+        setTimeout(function() {
+            // 方案A：寻找我们刚埋下的锚点并平滑滚动过去
+            var bottom = window.parent.document.getElementById('page-bottom');
+            if (bottom) {
+                bottom.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            } else {
+                // 方案B (备用)：直接强拽 Streamlit 的主容器到底部
+                var appContainer = window.parent.document.querySelector('[data-testid="stAppViewContainer"]') || window.parent.document.querySelector('.main');
+                if (appContainer) {
+                    appContainer.scrollTo({ top: appContainer.scrollHeight, behavior: 'smooth' });
+                }
+            }
+        }, 500); 
     </script>
     """,
     height=0
