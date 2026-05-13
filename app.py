@@ -1,12 +1,22 @@
 # app.py
 import streamlit as st
 import logic
+import court_engine  # 引入抽离的推演引擎
 import streamlit.components.v1 as components
-import court_engine  # 引入我们刚才抽离的引擎组件
 from services import sheets_service
 from prompts import ROLE_CHAIN
+from datetime import datetime, timezone, timedelta
 
 st.set_page_config(page_title="赛博大明投策堂", layout="centered", page_icon="🏯")
+
+# ==========================================
+# ⏰ 核心时区与时间状态计算 (东八区北京时间)
+# ==========================================
+bj_tz = timezone(timedelta(hours=8))
+now = datetime.now(bj_tz)
+today_str = now.strftime("%Y-%m-%d")
+# 判断当前是否处于：15:00 之后 且 00:00 之前
+is_session_time = 15 <= now.hour <= 23 
 
 # ==========================================
 # 🎨 核心 UI 样式
@@ -55,7 +65,6 @@ if not st.session_state.username:
         if st.button("升座", use_container_width=True, type="primary"):
             if sheets_service.verify_user(login_user, login_pwd):
                 st.session_state.username = login_user
-                # 登录成功，立刻去史馆调取他以前的所有聊天记录
                 with st.spinner("正在调取起居注档案..."):
                     st.session_state.chat_history = sheets_service.load_chat_history(login_user)
                 st.rerun()
@@ -72,14 +81,14 @@ if not st.session_state.username:
             else:
                 st.error(msg)
     st.markdown("</div>", unsafe_allow_html=True)
-    st.stop() # 拦截执行，未登录者到此为止
+    st.stop() 
 
 # ==========================================
 # 👑 宫门内：已登录状态（主朝堂）
 # ==========================================
 username = st.session_state.username
 
-# --- 侧边栏：机要控制台 ---
+# --- 侧边栏：机要控制台与档案袋 ---
 with st.sidebar:
     st.title(f"👑 {username} 陛下，欢迎上朝")
     st.caption("赛博大明智投引擎 v2.0")
@@ -91,7 +100,17 @@ with st.sidebar:
         
     st.divider()
     
-    # 悄悄在后台加载数据
+    # 提取所有有记录的日期用于侧边栏归档
+    history_all = st.session_state.chat_history
+    all_dates = sorted(list(set(t['timestamp'][:10] for t in history_all)), reverse=True)
+    
+    st.subheader("📅 调阅往日档案")
+    if all_dates:
+        view_date = st.selectbox("选择日期查看起居注", ["今日朝堂"] + all_dates, index=0)
+    else:
+        view_date = "今日朝堂"
+        
+    st.divider()
     with st.spinner("东厂情报加载中..."):
         knowledge, files = logic.fetch_imperial_data()
         
@@ -100,27 +119,52 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-# --- 主界面：渲染史官记录 ---
-for turn in st.session_state.chat_history:
-    st.caption(f"🕒 {turn.get('timestamp', '过往记录')}")
-    st.markdown(f"<div class='emperor-decree'>💬 旨意：{turn['decree']}</div>", unsafe_allow_html=True)
-    for res in turn['responses']:
-        st.markdown(f"<div class='report-card'><div class='role-title'>{res['title']}</div>{res['content']}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='history-divider'></div>", unsafe_allow_html=True)
+# ==========================================
+# 📅 渲染逻辑：根据选择的日期显示内容
+# ==========================================
+target_date = today_str if view_date == "今日朝堂" else view_date
+display_history = [turn for turn in history_all if turn.get('timestamp', '').startswith(target_date)]
 
-# --- 底部：聆听圣意 (聊天输入框) ---
-chat_input = st.chat_input("输入新的旨意 (如：明日半导体能接吗？)...")
+if display_history:
+    for turn in display_history:
+        st.caption(f"🕒 {turn.get('timestamp')}")
+        st.markdown(f"<div class='emperor-decree'>💬 旨意：{turn['decree']}</div>", unsafe_allow_html=True)
+        for res in turn['responses']:
+            st.markdown(f"<div class='report-card'><div class='role-title'>{res['title']}</div>{res['content']}</div>", unsafe_allow_html=True)
+        st.markdown("<div class='history-divider'></div>", unsafe_allow_html=True)
+elif view_date != "今日朝堂":
+    st.markdown("<h3 style='text-align: center; color: #999; margin-top: 100px;'>此日无奏章记录</h3>", unsafe_allow_html=True)
 
-if chat_input:
-    st.session_state.current_scenario = "chat"
-    st.session_state.current_decree = chat_input
-    st.session_state.execute_flag = True
+# ==========================================
+# 🚀 底部行为逻辑：时间锁 + 唯一性校验
+# ==========================================
+has_assembled_today = any(turn['scenario'] == 'init' and turn['timestamp'].startswith(today_str) for turn in history_all)
+
+if view_date == "今日朝堂":
+    if not has_assembled_today:
+        if is_session_time:
+            st.markdown("<h2 style='text-align: center; color: #999; margin-top: 50px; font-weight: 300;'>申时已到，今日密报已汇聚</h2>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 1.5, 1])
+            with col2:
+                if st.button("🌅 升座上朝 (生成今日简报)", use_container_width=True, type="primary"):
+                    st.session_state.current_scenario = "init"
+                    st.session_state.current_decree = "开始分析当日的行情局势"
+                    st.session_state.execute_flag = True
+                    st.rerun()
+        else:
+            st.warning(f"🏮 当前时间 {now.strftime('%H:%M')}。未到申时（15:00），今日密报尚未全量汇聚，请待收盘后再行奏报。")
+            st.info("💡 您可以从侧边栏调阅往日档案进行复盘。")
+    else:
+        chat_input = st.chat_input("今日简报已呈递，请下达进一步追问旨意...")
+        if chat_input:
+            st.session_state.current_scenario = "chat"
+            st.session_state.current_decree = chat_input
+            st.session_state.execute_flag = True
 
 # ==========================================
 # ⚙️ 核心大模型推演引擎 (已解耦)
 # ==========================================
 if st.session_state.execute_flag:
-    # 直接呼叫抽离出去的朝堂引擎
     court_engine.process_imperial_decree(
         username=username, 
         scenario=st.session_state.current_scenario, 
@@ -128,62 +172,21 @@ if st.session_state.execute_flag:
         knowledge=knowledge
     )
     
-    # 执行完毕后，复位标志位并刷新页面
     st.session_state.execute_flag = False 
     st.rerun()
-
-# ==========================================
-# 📜 页面底部自动滚动脚本 (保持不变)
-# ==========================================
-# ... 下面的 js 滚动代码保持不变 ...
-                
-    # ★ 写入本地内存
-    st.session_state.chat_history.append({
-        "timestamp": "刚刚",
-        "scenario": scenario,
-        "decree": decree,
-        "responses": current_turn_responses
-    })
-    
-    # ★ 写入云端史馆 (Google 表格)
-    with st.spinner("史官正在记录入库..."):
-        sheets_service.save_chat_history(username, scenario, decree, current_turn_responses)
-    
-    st.session_state.execute_flag = False 
-    st.rerun()
-
-# --- 初始空白页 (没历史记录时显示) ---
-elif len(st.session_state.chat_history) == 0:
-    st.markdown("<h2 style='text-align: center; color: #999; margin-top: 100px; font-weight: 300;'>众位大臣已就绪</h2>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        if st.button("🌅 上朝 (生成今日简报)", use_container_width=True, type="primary"):
-            st.session_state.current_scenario = "init"
-            st.session_state.current_decree = "开始分析当日的行情局势"
-            st.session_state.execute_flag = True
-            st.rerun()
 
 # ==========================================
 # 📜 页面底部自动滚动脚本 (终极锚点版)
 # ==========================================
-import streamlit.components.v1 as components
-
-# 1. 在页面真正的最底部，悄悄埋下一个看不见的“锚点”
 st.markdown("<div id='page-bottom'></div>", unsafe_allow_html=True)
-
-# 2. 注入 JS：等待半秒钟页面画完后，精准拉到锚点位置
 components.html(
     """
     <script>
-        // 设置 500 毫秒的延迟，给 Streamlit 充足的时间把历史奏章渲染出来
         setTimeout(function() {
-            // 方案A：寻找我们刚埋下的锚点并平滑滚动过去
             var bottom = window.parent.document.getElementById('page-bottom');
             if (bottom) {
                 bottom.scrollIntoView({ behavior: 'smooth', block: 'end' });
             } else {
-                // 方案B (备用)：直接强拽 Streamlit 的主容器到底部
                 var appContainer = window.parent.document.querySelector('[data-testid="stAppViewContainer"]') || window.parent.document.querySelector('.main');
                 if (appContainer) {
                     appContainer.scrollTo({ top: appContainer.scrollHeight, behavior: 'smooth' });
