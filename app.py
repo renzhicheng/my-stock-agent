@@ -175,7 +175,7 @@ else:
         st.session_state.execute_flag = False 
         st.rerun()
 
-    # --- 自动滚动脚本 ---
+# --- 自动滚动脚本 ---
     st.markdown("<div id='page-bottom'></div>", unsafe_allow_html=True)
     components.html(
         """
@@ -190,9 +190,6 @@ else:
                 }
             }, 600); 
         </script>
-        """,
-        height=0
-    )
-    """,
-    height=0
-)
+        """,        # 👈 必须有这行：三个双引号加上一个逗号
+        height=0    # 👈 必须有这行：设置高度为0
+    )               # 👈 必须有这行：最后收尾的反括号
