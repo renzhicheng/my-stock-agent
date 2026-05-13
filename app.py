@@ -2,6 +2,7 @@
 import streamlit as st
 import logic
 import streamlit.components.v1 as components
+import court_engine  # 引入我们刚才抽离的引擎组件
 from services import sheets_service
 from prompts import ROLE_CHAIN
 
@@ -115,37 +116,26 @@ if chat_input:
     st.session_state.current_decree = chat_input
     st.session_state.execute_flag = True
 
-# --- 核心大模型推演引擎 ---
+# ==========================================
+# ⚙️ 核心大模型推演引擎 (已解耦)
+# ==========================================
 if st.session_state.execute_flag:
-    decree = st.session_state.current_decree
-    scenario = st.session_state.current_scenario
+    # 直接呼叫抽离出去的朝堂引擎
+    court_engine.process_imperial_decree(
+        username=username, 
+        scenario=st.session_state.current_scenario, 
+        decree=st.session_state.current_decree, 
+        knowledge=knowledge
+    )
     
-    st.markdown(f"<div class='emperor-decree'>💬 旨意：{decree}</div>", unsafe_allow_html=True)
-    current_turn_responses = []
-    context_dict = {"user_decree": decree}
-    
-    for role in ROLE_CHAIN:
-        with st.spinner(f"{role['ui_title'].split(' ')[1]} 思考中..."):
-            try:
-                template_key = "init_prompt_template" if scenario == "init" else "chat_prompt_template"
-                formatted_prompt = role[template_key].format(**context_dict)
-                
-                output = logic.ask_deepseek(
-                    sys_role=role['system_prompt'], 
-                    base_data=knowledge, 
-                    user_prompt=formatted_prompt, 
-                    temp=role['temperature']
-                )
-                
-                context_dict[role['id']] = output
-                current_turn_responses.append({"title": role['ui_title'], "content": output})
-                st.markdown(f"<div class='report-card'><div class='role-title'>{role['ui_title']}</div>{output}</div>", unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"调用受阻：{e}")
-                err_msg = "微臣不知。"
-                context_dict[role['id']] = err_msg
-                current_turn_responses.append({"title": role['ui_title'], "content": err_msg})
+    # 执行完毕后，复位标志位并刷新页面
+    st.session_state.execute_flag = False 
+    st.rerun()
+
+# ==========================================
+# 📜 页面底部自动滚动脚本 (保持不变)
+# ==========================================
+# ... 下面的 js 滚动代码保持不变 ...
                 
     # ★ 写入本地内存
     st.session_state.chat_history.append({
