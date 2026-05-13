@@ -1,6 +1,7 @@
 # app.py
 import streamlit as st
 import logic
+import streamlit.components.v1 as components
 from services import sheets_service
 from prompts import ROLE_CHAIN
 
@@ -172,3 +173,19 @@ elif len(st.session_state.chat_history) == 0:
             st.session_state.current_decree = "开始分析当日的行情局势"
             st.session_state.execute_flag = True
             st.rerun()
+
+# ==========================================
+# 📜 页面底部自动滚动脚本
+# ==========================================
+components.html(
+    """
+    <script>
+        // 找到 Streamlit 的主滚动容器并将其拉到最底部
+        var body = window.parent.document.querySelector(".main");
+        if (body) {
+            body.scrollTo(0, body.scrollHeight);
+        }
+    </script>
+    """,
+    height=0
+)
