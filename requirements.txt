@@ -1,5 +1,7 @@
 streamlit
 pandas
+akshare
+tabulate
 openai
 google-api-python-client
 google-auth
