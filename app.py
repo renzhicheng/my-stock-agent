@@ -7,7 +7,7 @@ from services import sheets_service
 from prompts import ROLE_CHAIN
 from datetime import datetime, timezone, timedelta
 
-# 加入 initial_sidebar_state="collapsed" 让手机端默认收起侧边栏，体验更好
+# 1. 强制手机端收起侧边栏
 st.set_page_config(page_title="赛博大明投策堂", layout="centered", page_icon="🏯", initial_sidebar_state="collapsed")
 
 # ==========================================
@@ -19,14 +19,19 @@ today_str = now.strftime("%Y-%m-%d")
 is_session_time = 15 <= now.hour <= 23 
 
 # ==========================================
-# 📱 核心 UI 样式 (专门针对手机屏幕优化)
+# 📱 核心 UI 样式 (加入 !important 强行镇压手机端排版)
 # ==========================================
 st.markdown("""
     <style>
-    /* 适配手机屏幕的自适应宽度 */
-    .block-container { max-width: 850px; padding: 1.5rem 1rem 100px 1rem; overflow-x: hidden; }
+    /* 强制重写全局内边距，挽救手机端可怜的屏幕宽度 */
+    .block-container { 
+        max-width: 850px !important; 
+        padding-top: 1rem !important; 
+        padding-bottom: 100px !important; 
+        padding-left: 1rem !important; 
+        padding-right: 1rem !important;
+    }
     
-    /* 报告卡片手机端内边距缩小 */
     .report-card { padding: 16px; border-radius: 12px; margin-bottom: 20px; background-color: #ffffff; border: 1px solid #eaeaea; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); font-size: 15px; line-height: 1.6; color: #2c3e50; overflow-x: auto; }
     .report-card table { display: block !important; width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
     .role-title { font-size: 1rem; font-weight: 600; color: #1a1a1a; margin-bottom: 12px; display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
@@ -34,8 +39,8 @@ st.markdown("""
     
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     
-    /* 登录框自适应手机宽度，最大不超过 400px */
-    .auth-box { width: 100%; max-width: 400px; margin: 40px auto; padding: 25px 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    /* 登录框强制自适应 */
+    .auth-box { width: 100% !important; max-width: 400px !important; margin: 20px auto !important; padding: 20px !important; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
     </style>
 """, unsafe_allow_html=True)
 
@@ -59,9 +64,9 @@ if "current_decree" not in st.session_state:
 
 if not st.session_state.username:
     # ----------------------------------------
-    # 🚪 宫门外：未登录状态（在此区域绝对碰不到侧边栏代码）
+    # 🚪 宫门外：未登录状态
     # ----------------------------------------
-    st.markdown("<h2 style='text-align: center; margin-top: 30px;'>🏯 赛博大明·内阁机要室</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 10px;'>🏯 赛博大明·内阁机要室</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #666; margin-bottom: 20px;'>推演国运，洞察先机</p>", unsafe_allow_html=True)
     
     st.markdown("<div class='auth-box'>", unsafe_allow_html=True)
@@ -89,16 +94,14 @@ if not st.session_state.username:
             else:
                 st.error(msg)
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    # 舍弃 st.stop()，依靠 else 分支实现物理隔离
 
 else:
     # ----------------------------------------
-    # 👑 宫门内：已登录状态（所有核心逻辑都在此 Else 之下）
+    # 👑 宫门内：已登录状态
     # ----------------------------------------
     username = st.session_state.username
 
-    # --- 侧边栏：机要控制台与档案袋 ---
+    # --- 侧边栏 ---
     with st.sidebar:
         st.title(f"👑 {username} 陛下")
         st.caption("赛博大明引擎 v2.0")
@@ -128,7 +131,7 @@ else:
             st.cache_data.clear()
             st.rerun()
 
-    # --- 渲染逻辑 ---
+    # --- 渲染历史 ---
     target_date = today_str if view_date == "今日朝堂" else view_date
     display_history = [turn for turn in history_all if turn.get('timestamp', '').startswith(target_date)]
 
@@ -141,14 +144,14 @@ else:
     elif view_date != "今日朝堂":
         st.markdown("<h4 style='text-align: center; color: #999; margin-top: 80px;'>此日无奏章记录</h4>", unsafe_allow_html=True)
 
-    # --- 行为逻辑 ---
+    # --- 业务逻辑：时间锁与上朝 ---
     has_assembled_today = any(turn['scenario'] == 'init' and turn['timestamp'].startswith(today_str) for turn in history_all)
 
     if view_date == "今日朝堂":
         if not has_assembled_today:
             if is_session_time:
-                st.markdown("<h3 style='text-align: center; color: #666; margin-top: 40px; font-weight: 400;'>申时已到，密报已汇聚</h3>", unsafe_allow_html=True)
-                col1, col2, col3 = st.columns([0.5, 2, 0.5]) # 手机端按钮宽度调整
+                st.markdown("<h3 style='text-align: center; color: #666; margin-top: 40px; font-weight: 400;'>申时已到，密报汇聚</h3>", unsafe_allow_html=True)
+                col1, col2, col3 = st.columns([0.2, 2, 0.2]) 
                 with col2:
                     if st.button("🌅 升座上朝", use_container_width=True, type="primary"):
                         st.session_state.current_scenario = "init"
@@ -164,7 +167,7 @@ else:
                 st.session_state.current_decree = chat_input
                 st.session_state.execute_flag = True
 
-    # --- 推演引擎 ---
+    # --- 推演引擎调用 ---
     if st.session_state.execute_flag:
         court_engine.process_imperial_decree(
             username=username, 
@@ -175,7 +178,7 @@ else:
         st.session_state.execute_flag = False 
         st.rerun()
 
-# --- 自动滚动脚本 ---
+    # --- 自动滚动脚本 ---
     st.markdown("<div id='page-bottom'></div>", unsafe_allow_html=True)
     components.html(
         """
@@ -190,6 +193,6 @@ else:
                 }
             }, 600); 
         </script>
-        """,        # 👈 必须有这行：三个双引号加上一个逗号
-        height=0    # 👈 必须有这行：设置高度为0
-    )               # 👈 必须有这行：最后收尾的反括号
+        """,
+        height=0
+    )
