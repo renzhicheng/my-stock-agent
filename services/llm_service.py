@@ -19,7 +19,7 @@ def call_deepseek(sys_role, base_data, user_prompt, temp=0.3):
     system_content = f"【全局奏章数据】\n{base_data}\n\n【你的角色】\n{sys_role}"
     
     res = client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         messages=[
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_prompt}
