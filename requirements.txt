@@ -1,6 +1,7 @@
 streamlit
 pandas
 akshare
+efinance
 tabulate
 openai
 google-api-python-client
