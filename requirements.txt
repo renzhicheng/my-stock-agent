@@ -2,6 +2,7 @@ streamlit
 pandas
 akshare
 efinance
+tushare
 tabulate
 openai
 google-api-python-client
